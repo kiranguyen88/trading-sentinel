@@ -1,0 +1,10 @@
+{
+  "holdings": [
+    {"ticker": "AAPL", "quantity": 10, "avg_buy_price": 175.0},
+    {"ticker": "TSLA", "quantity": 5,  "avg_buy_price": 220.0},
+    {"ticker": "NVDA", "quantity": 8,  "avg_buy_price": 850.0},
+    {"ticker": "MSFT", "quantity": 6,  "avg_buy_price": 400.0}
+  ],
+  "watchlist": ["META", "AMZN", "AMD", "PLTR", "MSTR"],
+  "whatsapp_number": "whatsapp:+84949308344"
+}

@@ -1,0 +1,10 @@
+google-genai
+flask
+yfinance
+pandas
+numpy
+ta
+python-dotenv
+requests
+twilio
+apscheduler

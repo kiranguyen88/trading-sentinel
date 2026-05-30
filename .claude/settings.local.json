@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Bash(findstr :5000)",
+      "Bash(taskkill /F /PID 23556 /PID 9208 /PID 19160 /PID 10944 /PID 24044 /PID 14980)",
+      "Bash(taskkill /F /PID 23556)",
+      "Bash(taskkill /F /PID 9208)",
+      "Bash(taskkill /F /PID 19160)",
+      "Bash(taskkill /F /PID 10944)",
+      "Bash(taskkill /F /PID 24044)",
+      "PowerShell(Stop-Process -Id 23556,9208,19160,10944,24044,14980 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(netstat -ano)"
+    ]
+  }
+}
