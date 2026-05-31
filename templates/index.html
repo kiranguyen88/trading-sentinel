@@ -208,7 +208,24 @@
     @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
+    /* ── Charts panel ── */
+    .charts-panel {
+      width: 240px; flex-shrink: 0; background: var(--surface);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+      overflow-y: auto; padding: 10px 8px; gap: 14px;
+    }
+    .chart-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .chart-title {
+      font-size: .72rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px;
+    }
+    .chart-card canvas { width: 100% !important; }
+
     .bubble h3 { font-size:1rem; color:#7eb8f7; border-bottom:1px solid var(--border); padding-bottom:3px; margin:.6em 0 .3em; font-weight:700; }
     .bubble h2 { font-size:1.05rem; font-weight:700; margin:.6em 0 .3em; }
     .bubble strong { font-weight:600; }
@@ -283,6 +300,22 @@
     </div>
   </div>
 
+  <!-- Charts Panel -->
+  <div class="charts-panel">
+    <div class="chart-card">
+      <div class="chart-title">📊 Portfolio Allocation</div>
+      <canvas id="chart-alloc" height="200"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">💰 P&amp;L per Position</div>
+      <canvas id="chart-pnl" height="220"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">📈 Day Change %</div>
+      <canvas id="chart-day" height="200"></canvas>
+    </div>
+  </div>
+
   <!-- Chat -->
   <div class="chat-area">
     <div id="messages">
@@ -325,16 +358,16 @@ Quick starts:
   // ── Clock ──
   function updateClock() {
     const now = new Date();
-    const et = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', second:'2-digit',
+    const gmt7 = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Bangkok', hour:'2-digit', minute:'2-digit', second:'2-digit',
       weekday:'short', month:'short', day:'numeric'
     }).format(now);
-    // Market hours 9:30–16:00 ET Mon-Fri
+    // Market hours 9:30–16:00 ET Mon-Fri (ET = GMT+7 minus 11h or 12h)
     const etHour = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
     const h = etHour.getHours(), m = etHour.getMinutes(), day = etHour.getDay();
     const open = (day>=1&&day<=5) && (h>9||(h===9&&m>=30)) && h<16;
     document.getElementById('market-time').innerHTML =
-      `${et} ET &nbsp;<span style="color:${open?'var(--green)':'var(--red)'}">${open?'● MARKET OPEN':'● MARKET CLOSED'}</span>`;
+      `${gmt7} GMT+7 &nbsp;<span style="color:${open?'var(--green)':'var(--red)'}">${open?'● MARKET OPEN':'● MARKET CLOSED'}</span>`;
   }
   updateClock();
   setInterval(updateClock, 1000);
@@ -346,6 +379,7 @@ Quick starts:
       const res = await fetch('/portfolio');
       const data = await res.json();
       renderPortfolio(data);
+      renderCharts(data);
     } catch(e) {
       document.getElementById('holdings').innerHTML = '<div style="padding:12px;color:var(--red);font-size:.78rem">Failed to load portfolio</div>';
     }
@@ -388,6 +422,88 @@ Quick starts:
         <div class="indicator-row">${rsiBadge}${macdBadge}${volBadge}</div>
       </div>`;
     }).join('');
+  }
+
+  // ── Charts ──
+  let _chartAlloc = null, _chartPnl = null, _chartDay = null;
+
+  function renderCharts(holdings) {
+    const valid = (holdings || []).filter(h => !h.error && h.current_price);
+    if (!valid.length) return;
+
+    const tickers  = valid.map(h => h.ticker);
+    const colors   = ['#58a6ff','#3fb950','#f78166','#d29922','#bc8cff','#39d353','#ff7b72','#79c0ff'];
+    const pnlVals  = valid.map(h => +(h.unrealized_pnl || 0).toFixed(0));
+    const dayVals  = valid.map(h => +(h.day_change_pct || 0).toFixed(2));
+    const allocVal = valid.map(h => +((h.current_price * h.quantity) || 0).toFixed(0));
+
+    const chartDefaults = {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } } },
+    };
+
+    // --- Donut: Allocation ---
+    if (_chartAlloc) _chartAlloc.destroy();
+    _chartAlloc = new Chart(document.getElementById('chart-alloc'), {
+      type: 'doughnut',
+      data: {
+        labels: tickers,
+        datasets: [{ data: allocVal, backgroundColor: colors, borderColor: '#0d1117', borderWidth: 2 }]
+      },
+      options: { ...chartDefaults, cutout: '65%',
+        plugins: { ...chartDefaults.plugins, tooltip: {
+          callbacks: { label: ctx => ` ${ctx.label}: $${ctx.raw.toLocaleString()}` }
+        }}
+      }
+    });
+
+    // --- Bar: P&L ---
+    if (_chartPnl) _chartPnl.destroy();
+    _chartPnl = new Chart(document.getElementById('chart-pnl'), {
+      type: 'bar',
+      data: {
+        labels: tickers,
+        datasets: [{
+          data: pnlVals,
+          backgroundColor: pnlVals.map(v => v >= 0 ? '#3fb950aa' : '#f85149aa'),
+          borderColor:      pnlVals.map(v => v >= 0 ? '#3fb950' : '#f85149'),
+          borderWidth: 1, borderRadius: 4,
+        }]
+      },
+      options: { ...chartDefaults, indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => ` $${ctx.raw.toLocaleString()}` }
+        }},
+        scales: {
+          x: { ticks: { color: '#8b949e', font:{size:9} }, grid: { color: '#30363d' } },
+          y: { ticks: { color: '#c9d1d9', font:{size:10} }, grid: { display: false } }
+        }
+      }
+    });
+
+    // --- Bar: Day Change % ---
+    if (_chartDay) _chartDay.destroy();
+    _chartDay = new Chart(document.getElementById('chart-day'), {
+      type: 'bar',
+      data: {
+        labels: tickers,
+        datasets: [{
+          data: dayVals,
+          backgroundColor: dayVals.map(v => v >= 0 ? '#3fb950aa' : '#f85149aa'),
+          borderColor:      dayVals.map(v => v >= 0 ? '#3fb950' : '#f85149'),
+          borderWidth: 1, borderRadius: 4,
+        }]
+      },
+      options: { ...chartDefaults, indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}%` }
+        }},
+        scales: {
+          x: { ticks: { color: '#8b949e', font:{size:9}, callback: v => v+'%' }, grid: { color: '#30363d' } },
+          y: { ticks: { color: '#c9d1d9', font:{size:10} }, grid: { display: false } }
+        }
+      }
+    });
   }
 
   // ── Chat ──

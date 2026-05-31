@@ -1,6 +1,8 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_GMT7 = timezone(timedelta(hours=7))
 from flask import Flask, render_template, request, Response, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -126,7 +128,7 @@ def check_warnings():
         send_whatsapp(msg)
 
     if alerts:
-        print(f"[Monitor] {len(alerts)} alert(s) sent at {now_et.strftime('%H:%M ET')}")
+        print(f"[Monitor] {len(alerts)} alert(s) sent at {datetime.now(_GMT7).strftime('%H:%M GMT+7')}")
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_GMT7 = timezone(timedelta(hours=7))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yfinance as yf
 import requests
@@ -302,7 +304,7 @@ GEMINI_TOOLS = [
 
 def build_system_prompt() -> str:
     portfolio = load_portfolio()
-    today     = datetime.now().strftime("%A, %B %d, %Y %H:%M ET")
+    today     = datetime.now(_GMT7).strftime("%A, %B %d, %Y %H:%M GMT+7")
 
     holdings_txt = "\n".join(
         f"  - {h['ticker']}: {h['quantity']} shares @ avg ${h['avg_buy_price']}"
@@ -434,7 +436,7 @@ def run_daily_digest() -> str:
     watchlist = get_watchlist_snapshot()
     lines     = []
 
-    now = datetime.now().strftime("%b %d %H:%M")
+    now = datetime.now(_GMT7).strftime("%b %d %H:%M GMT+7")
     lines.append(f"Trading Sentinel — {now}\n")
 
     lines.append("== HOLDINGS ==")
