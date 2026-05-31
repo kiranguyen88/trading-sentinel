@@ -9,7 +9,7 @@ import concurrent.futures
 from trading_bot import get_stock_data, get_market_news, load_portfolio
 
 GEMINI_MODEL   = "gemini-1.5-flash"
-_GEMINI_API_V1 = "https://generativelanguage.googleapis.com/v1beta/models"
+_GEMINI_API_V1 = "https://generativelanguage.googleapis.com/v1/models"
 
 
 def _gemini_generate(prompt: str, temperature: float = 0.2) -> str:
