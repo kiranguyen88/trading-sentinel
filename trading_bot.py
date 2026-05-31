@@ -392,9 +392,13 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
     contents.append({"role": "user", "parts": [{"text": user_message}]})
 
     url = f"{_GEMINI_BASE}/{GEMINI_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+    # Prepend system prompt as first exchange so it works across all model versions
+    full_contents = [
+        {"role": "user",  "parts": [{"text": f"[SYSTEM INSTRUCTIONS]\n{system}"}]},
+        {"role": "model", "parts": [{"text": "Understood. I am Trading Sentinel, ready to assist with your portfolio."}]},
+    ] + contents
     body = {
-        "system_instruction": {"parts": [{"text": system}]},
-        "contents": contents,
+        "contents": full_contents,
         "generationConfig": {"temperature": 0.3},
     }
 
