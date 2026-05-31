@@ -215,18 +215,18 @@
       display: flex; flex-direction: row; gap: 10px;
       padding: 10px 14px; background: var(--surface);
       border-bottom: 1px solid var(--border); flex-shrink: 0;
-      overflow-x: auto;
+      height: 38vh; overflow-x: auto;
     }
     .chart-card {
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
       padding: 10px; display: flex; flex-direction: column; gap: 4px;
-      min-width: 200px; flex: 1;
+      min-width: 200px; flex: 1; overflow: hidden;
     }
     .chart-title {
       font-size: .68rem; font-weight: 700; color: var(--muted);
       text-transform: uppercase; letter-spacing: .5px;
     }
-    .chart-card canvas { width: 100% !important; }
+    .chart-card canvas { width: 100% !important; flex: 1; min-height: 0; }
 
     /* ── Content row (sidebar + chat) ── */
     .content-row { display: flex; flex: 1; overflow: hidden; }
@@ -356,15 +356,15 @@
   <div class="charts-panel">
     <div class="chart-card">
       <div class="chart-title">📊 Portfolio Allocation</div>
-      <canvas id="chart-alloc" height="130"></canvas>
+      <canvas id="chart-alloc"></canvas>
     </div>
     <div class="chart-card">
       <div class="chart-title">💰 P&amp;L per Position</div>
-      <canvas id="chart-pnl" height="130"></canvas>
+      <canvas id="chart-pnl"></canvas>
     </div>
     <div class="chart-card">
       <div class="chart-title">📈 Day Change %</div>
-      <canvas id="chart-day" height="130"></canvas>
+      <canvas id="chart-day"></canvas>
     </div>
   </div>
 
