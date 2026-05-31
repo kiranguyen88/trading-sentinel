@@ -15,11 +15,14 @@ load_dotenv()
 # Clients
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = "gemini-1.5-flash"
+GEMINI_MODEL   = "gemini-2.0-flash"
 _GEMINI_BASE   = "https://generativelanguage.googleapis.com/v1/models"
 
 # Keep client for any legacy references
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+gemini_client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options={"api_version": "v1alpha"},
+)
 
 twilio_client = TwilioClient(
     os.getenv("TWILIO_ACCOUNT_SID"),
