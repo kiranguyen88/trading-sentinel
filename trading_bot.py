@@ -389,7 +389,7 @@ def chat_stream(user_message: str, history: list[dict]):
 
 
 def _chat_stream_inner(user_message: str, history: list[dict]):
-    """Inner streaming logic — direct HTTP to Gemini v1 REST API."""
+    """Inner logic — direct HTTP to Gemini REST API (non-streaming generateContent)."""
     system = build_system_prompt()
 
     # Build contents array
@@ -399,7 +399,8 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
         contents.append({"role": role, "parts": [{"text": turn["content"]}]})
     contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-    url = f"{_GEMINI_BASE}/{GEMINI_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+    # Use generateContent (non-streaming) — supported by all Gemini models
+    url = f"{_GEMINI_BASE}/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     # Prepend system prompt as first exchange so it works across all model versions
     full_contents = [
         {"role": "user",  "parts": [{"text": f"[SYSTEM INSTRUCTIONS]\n{system}"}]},
@@ -410,28 +411,23 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
         "generationConfig": {"temperature": 0.3},
     }
 
-    with requests.post(url, json=body, stream=True, timeout=120) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            line = line.decode("utf-8") if isinstance(line, bytes) else line
-            if not line.startswith("data: "):
-                continue
-            raw = line[6:].strip()
-            if raw in ("[DONE]", ""):
-                continue
-            try:
-                chunk = json.loads(raw)
-                candidates = chunk.get("candidates", [])
-                if not candidates:
-                    continue
-                parts = candidates[0].get("content", {}).get("parts", [])
-                for part in parts:
-                    if "text" in part and part["text"]:
-                        yield f"data: {json.dumps({'type': 'text', 'text': part['text']})}\n\n"
-            except Exception:
-                continue
+    resp = requests.post(url, json=body, timeout=120)
+    resp.raise_for_status()
+    data = resp.json()
+
+    candidates = data.get("candidates", [])
+    if not candidates:
+        yield f"data: {json.dumps({'type': 'text', 'text': 'No response from AI.'})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    parts = candidates[0].get("content", {}).get("parts", [])
+    full_text = "".join(p.get("text", "") for p in parts if "text" in p)
+
+    # Stream the text in chunks so the frontend renders progressively
+    chunk_size = 80
+    for i in range(0, len(full_text), chunk_size):
+        yield f"data: {json.dumps({'type': 'text', 'text': full_text[i:i+chunk_size]})}\n\n"
 
     yield "data: [DONE]\n\n"
 
