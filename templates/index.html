@@ -39,7 +39,7 @@
     #digest-btn:hover { opacity: .85; }
 
     /* ── Main layout ── */
-    .main { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
+    .main { display: flex; flex: 1; overflow: hidden; flex-direction: row; }
 
     /* ── Portfolio sidebar ── */
     .sidebar {
@@ -210,23 +210,21 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    /* ── Charts strip (top row) ── */
+    /* ── Charts panel (left column) ── */
     .charts-panel {
-      display: flex; flex-direction: row; gap: 10px;
-      padding: 10px 14px; background: var(--surface);
-      border-bottom: 1px solid var(--border); flex-shrink: 0;
-      height: 38vh; overflow-x: auto;
+      width: 240px; flex-shrink: 0; background: var(--surface);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+      overflow-y: auto; padding: 10px 8px; gap: 12px;
     }
     .chart-card {
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 10px; display: flex; flex-direction: column; gap: 4px;
-      min-width: 200px; flex: 1; overflow: hidden;
+      padding: 10px; display: flex; flex-direction: column; gap: 6px;
     }
     .chart-title {
       font-size: .68rem; font-weight: 700; color: var(--muted);
       text-transform: uppercase; letter-spacing: .5px;
     }
-    .chart-card canvas { width: 100% !important; flex: 1; min-height: 0; }
+    .chart-card canvas { width: 100% !important; }
 
     /* ── Content row (sidebar + chat) ── */
     .content-row { display: flex; flex: 1; overflow: hidden; }
@@ -251,6 +249,9 @@
       /* Charts strip scrolls horizontally */
       .charts-panel { padding: 8px 10px; gap: 8px; }
       .chart-card { min-width: 160px; padding: 8px; }
+
+      /* Hide charts panel on mobile */
+      .charts-panel { display: none; }
 
       /* Content row becomes tab-based */
       .content-row { position: relative; }
@@ -352,22 +353,6 @@
 
 <div class="main">
 
-  <!-- Charts Strip (top) -->
-  <div class="charts-panel">
-    <div class="chart-card">
-      <div class="chart-title">📊 Portfolio Allocation</div>
-      <canvas id="chart-alloc"></canvas>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">💰 P&amp;L per Position</div>
-      <canvas id="chart-pnl"></canvas>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">📈 Day Change %</div>
-      <canvas id="chart-day"></canvas>
-    </div>
-  </div>
-
   <!-- Content Row -->
   <div class="content-row">
 
@@ -387,6 +372,22 @@
     <div class="sidebar-panel-watch">
       <div class="sidebar-section-header">Watchlist</div>
       <div id="watchlist"><div style="padding:8px 12px;color:var(--muted);font-size:.78rem">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Charts Panel (left of chat) -->
+  <div class="charts-panel">
+    <div class="chart-card">
+      <div class="chart-title">📊 Portfolio Allocation</div>
+      <canvas id="chart-alloc"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">💰 P&amp;L per Position</div>
+      <canvas id="chart-pnl"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">📈 Day Change %</div>
+      <canvas id="chart-day"></canvas>
     </div>
   </div>
 
