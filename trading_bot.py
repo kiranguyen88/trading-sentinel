@@ -36,8 +36,14 @@ def load_portfolio() -> dict:
     with open("portfolio.json") as f:
         return json.load(f)
 
-def get_whatsapp_number() -> str:
-    return load_portfolio().get("whatsapp_number", "")
+def get_whatsapp_numbers() -> list[str]:
+    p = load_portfolio()
+    # Support both old single number and new list
+    numbers = p.get("whatsapp_numbers", [])
+    if not numbers:
+        single = p.get("whatsapp_number", "")
+        numbers = [single] if single else []
+    return [n for n in numbers if n]
 
 
 # ---------------------------------------------------------------------------
@@ -231,15 +237,17 @@ def get_all_tickers_report() -> dict:
 # ---------------------------------------------------------------------------
 
 def send_whatsapp(message: str, to: str | None = None) -> bool:
-    to = to or get_whatsapp_number()
-    if not to:
+    targets = [to] if to else get_whatsapp_numbers()
+    if not targets:
         return False
-    try:
-        twilio_client.messages.create(body=message, from_=TWILIO_FROM, to=to)
-        return True
-    except Exception as e:
-        print(f"[WhatsApp error] {e}")
-        return False
+    success = False
+    for number in targets:
+        try:
+            twilio_client.messages.create(body=message, from_=TWILIO_FROM, to=number)
+            success = True
+        except Exception as e:
+            print(f"[WhatsApp error] {number}: {e}")
+    return success
 
 
 # ---------------------------------------------------------------------------

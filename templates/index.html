@@ -235,8 +235,9 @@
     </div>
 
     <div class="modal-section">
-      <h3>WhatsApp Number</h3>
-      <input type="text" class="watchlist-input" id="modal-whatsapp" placeholder="whatsapp:+84949308344">
+      <h3>WhatsApp Numbers (all receive alerts)</h3>
+      <div id="modal-whatsapp-list"></div>
+      <button class="add-row-btn" onclick="addWhatsappRow()" style="margin-top:6px">+ Add WhatsApp number</button>
     </div>
 
     <div class="modal-actions">
@@ -618,14 +619,29 @@ Quick starts:
     (_portfolioData.holdings || []).forEach(h => addHoldingRow(h));
     // Watchlist
     document.getElementById('modal-watchlist').value = (_portfolioData.watchlist || []).join(', ');
-    // WhatsApp
-    document.getElementById('modal-whatsapp').value = _portfolioData.whatsapp_number || '';
+    // WhatsApp numbers
+    const waList = document.getElementById('modal-whatsapp-list');
+    waList.innerHTML = '';
+    const numbers = _portfolioData.whatsapp_numbers || (_portfolioData.whatsapp_number ? [_portfolioData.whatsapp_number] : []);
+    numbers.forEach(n => addWhatsappRow(n));
     document.getElementById('save-status').textContent = '';
     document.getElementById('portfolio-modal').classList.add('open');
   }
 
   function closePortfolioModal() {
     document.getElementById('portfolio-modal').classList.remove('open');
+  }
+
+  function addWhatsappRow(number = '') {
+    const container = document.getElementById('modal-whatsapp-list');
+    const row = document.createElement('div');
+    row.className = 'holding-row';
+    row.innerHTML = `
+      <input type="text" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.82rem;outline:none;"
+             placeholder="whatsapp:+84xxxxxxxxx" value="${number}" class="wa-number-input">
+      <button class="del-btn" onclick="this.parentElement.remove()" title="Remove">✕</button>
+    `;
+    container.appendChild(row);
   }
 
   function addHoldingRow(h = {}) {
@@ -660,9 +676,10 @@ Quick starts:
     }
     const watchlistRaw = document.getElementById('modal-watchlist').value;
     const watchlist = watchlistRaw.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
-    const whatsapp_number = document.getElementById('modal-whatsapp').value.trim();
+    const whatsapp_numbers = [...document.querySelectorAll('.wa-number-input')]
+      .map(i => i.value.trim()).filter(Boolean);
 
-    const payload = { holdings, watchlist, whatsapp_number };
+    const payload = { holdings, watchlist, whatsapp_numbers, whatsapp_number: whatsapp_numbers[0] || '' };
     const statusEl = document.getElementById('save-status');
     statusEl.textContent = 'Saving...';
     statusEl.style.color = 'var(--muted)';

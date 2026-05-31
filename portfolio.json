@@ -6,5 +6,6 @@
     {"ticker": "MSFT", "quantity": 6,  "avg_buy_price": 400.0}
   ],
   "watchlist": ["META", "AMZN", "AMD", "PLTR", "MSTR"],
-  "whatsapp_number": "whatsapp:+84949308344"
+  "whatsapp_number": "whatsapp:+84949308344",
+  "whatsapp_numbers": ["whatsapp:+84949308344"]
 }

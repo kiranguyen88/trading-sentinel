@@ -230,9 +230,10 @@ def portfolio_data():
 def portfolio_update():
     data = request.json or {}
     portfolio = load_portfolio()
-    portfolio["holdings"]        = data.get("holdings", portfolio.get("holdings", []))
-    portfolio["watchlist"]       = data.get("watchlist", portfolio.get("watchlist", []))
-    portfolio["whatsapp_number"] = data.get("whatsapp_number", portfolio.get("whatsapp_number", ""))
+    portfolio["holdings"]         = data.get("holdings", portfolio.get("holdings", []))
+    portfolio["watchlist"]        = data.get("watchlist", portfolio.get("watchlist", []))
+    portfolio["whatsapp_number"]  = data.get("whatsapp_number", portfolio.get("whatsapp_number", ""))
+    portfolio["whatsapp_numbers"] = data.get("whatsapp_numbers", portfolio.get("whatsapp_numbers", []))
     with open("portfolio.json", "w") as f:
         json.dump(portfolio, f, indent=2)
     return jsonify({"ok": True})
