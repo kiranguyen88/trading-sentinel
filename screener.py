@@ -6,7 +6,7 @@ import json
 import concurrent.futures
 from trading_bot import get_stock_data, get_market_news, gemini_client, load_portfolio
 from google.genai import types
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
 
 # ---------------------------------------------------------------------------
 # Universe — 60+ liquid US stocks across sectors
