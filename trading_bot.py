@@ -389,7 +389,7 @@ def chat_stream(user_message: str, history: list[dict]):
 
 
 def _chat_stream_inner(user_message: str, history: list[dict]):
-    """Inner logic — direct HTTP to Gemini REST API (non-streaming generateContent)."""
+    """Inner logic — uses google-genai SDK for generateContent."""
     system = build_system_prompt()
 
     # Build contents array
@@ -399,30 +399,19 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
         contents.append({"role": role, "parts": [{"text": turn["content"]}]})
     contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-    # Use generateContent (non-streaming) — supported by all Gemini models
-    url = f"{_GEMINI_BASE}/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    # Prepend system prompt as first exchange so it works across all model versions
+    # Prepend system prompt as first exchange
     full_contents = [
         {"role": "user",  "parts": [{"text": f"[SYSTEM INSTRUCTIONS]\n{system}"}]},
         {"role": "model", "parts": [{"text": "Understood. I am Trading Sentinel, ready to assist with your portfolio."}]},
     ] + contents
-    body = {
-        "contents": full_contents,
-        "generationConfig": {"temperature": 0.3},
-    }
 
-    resp = requests.post(url, json=body, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=full_contents,
+        config={"temperature": 0.3},
+    )
 
-    candidates = data.get("candidates", [])
-    if not candidates:
-        yield f"data: {json.dumps({'type': 'text', 'text': 'No response from AI.'})}\n\n"
-        yield "data: [DONE]\n\n"
-        return
-
-    parts = candidates[0].get("content", {}).get("parts", [])
-    full_text = "".join(p.get("text", "") for p in parts if "text" in p)
+    full_text = response.text or ""
 
     # Stream the text in chunks so the frontend renders progressively
     chunk_size = 80
