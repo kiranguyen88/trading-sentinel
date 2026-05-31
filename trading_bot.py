@@ -16,7 +16,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.0-flash"
-_GEMINI_BASE   = "https://generativelanguage.googleapis.com/v1/models"
+_GEMINI_BASE   = "https://generativelanguage.googleapis.com/v1beta/models"
 
 # Keep client for any legacy references
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
