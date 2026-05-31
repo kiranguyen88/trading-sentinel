@@ -207,6 +207,20 @@
                 background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 4px; }
     @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    .bubble h3 { font-size:1rem; color:#7eb8f7; border-bottom:1px solid var(--border); padding-bottom:3px; margin:.6em 0 .3em; font-weight:700; }
+    .bubble h2 { font-size:1.05rem; font-weight:700; margin:.6em 0 .3em; }
+    .bubble strong { font-weight:600; }
+    .bubble ul,.bubble ol { padding-left:1.3em; margin:.3em 0; }
+    .bubble li { margin:.15em 0; line-height:1.5; }
+    .bubble p { margin:.35em 0; line-height:1.6; }
+    .bubble hr { border:none; border-top:1px solid var(--border); margin:.6em 0; }
+    .bubble code { background:rgba(255,255,255,.1); padding:1px 5px; border-radius:4px; font-size:.85em; }
+    .bubble table { border-collapse:collapse; width:100%; margin:.5em 0; font-size:.82rem; }
+    .bubble th,.bubble td { border:1px solid var(--border); padding:4px 8px; text-align:left; }
+    .bubble th { background:rgba(255,255,255,.07); font-weight:600; }
+  </style>
 </head>
 <body>
 
@@ -436,7 +450,7 @@ Quick starts:
             if (evt.type === 'text') {
               firstChunk = false;
               fullText += evt.text;
-              bubble.textContent = fullText;
+              bubble.innerHTML = marked.parse(fullText);
               scrollToBottom();
             } else if (evt.type === 'tool_call') {
               const pill = document.createElement('div');
@@ -507,7 +521,7 @@ Quick starts:
       const note = data.market_note || '';
 
       if (suggestions.length === 0) {
-        scanMsg.querySelector('.bubble').textContent = '⚠️ No strong setups found right now. Try again later.';
+        scanMsg.querySelector('.bubble').innerHTML = marked.parse('⚠️ No strong setups found right now. Try again later.');
       } else {
         let text = `🎯 **Auto-Suggested Watchlist Updated** (${suggestions.length} picks)\n\n`;
         if (note) text += `📌 Market: ${note}\n\n`;
@@ -519,7 +533,7 @@ Quick starts:
           text += `   📰 News: ${s.news_catalyst}\n\n`;
         });
         text += `✅ Watchlist updated in sidebar. Click any ticker for detailed analysis.`;
-        scanMsg.querySelector('.bubble').textContent = text;
+        scanMsg.querySelector('.bubble').innerHTML = marked.parse(text);
       }
 
       scrollToBottom();
