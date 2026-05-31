@@ -8,7 +8,7 @@ import requests as _requests
 import concurrent.futures
 from trading_bot import get_stock_data, get_market_news, load_portfolio
 
-GEMINI_MODEL   = "gemini-1.5-flash-latest"
+GEMINI_MODEL   = "gemini-2.0-flash"
 _GEMINI_API_V1 = "https://generativelanguage.googleapis.com/v1/models"
 
 
