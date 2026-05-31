@@ -14,7 +14,10 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Clients
 # ---------------------------------------------------------------------------
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    http_options={"api_version": "v1alpha"},
+)
 GEMINI_MODEL  = "gemini-2.5-flash-preview-05-20"
 
 twilio_client = TwilioClient(
