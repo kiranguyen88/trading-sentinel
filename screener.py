@@ -195,6 +195,7 @@ CANDIDATE DATA:
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.2),
+            http_options=types.HttpOptions(api_version="v1alpha"),
         )
     except Exception as e:
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
