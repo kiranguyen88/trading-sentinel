@@ -14,11 +14,12 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Clients
 # ---------------------------------------------------------------------------
-gemini_client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    http_options=types.HttpOptions(api_version="v1alpha"),
-)
-GEMINI_MODEL  = "gemini-2.5-flash-preview-05-20"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = "gemini-1.5-flash"
+_GEMINI_BASE   = "https://generativelanguage.googleapis.com/v1/models"
+
+# Keep client for any legacy references
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 twilio_client = TwilioClient(
     os.getenv("TWILIO_ACCOUNT_SID"),
@@ -380,64 +381,45 @@ def chat_stream(user_message: str, history: list[dict]):
 
 
 def _chat_stream_inner(user_message: str, history: list[dict]):
-    """Inner streaming logic."""
-    system   = build_system_prompt()
-    contents = []
+    """Inner streaming logic — direct HTTP to Gemini v1 REST API."""
+    system = build_system_prompt()
 
+    # Build contents array
+    contents = []
     for turn in history[-20:]:
         role = "model" if turn["role"] == "assistant" else "user"
-        contents.append(types.Content(role=role, parts=[types.Part(text=turn["content"])]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
+        contents.append({"role": role, "parts": [{"text": turn["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-    config = types.GenerateContentConfig(
-        system_instruction=system,
-        tools=GEMINI_TOOLS,
-        temperature=0.3,
-    )
+    url = f"{_GEMINI_BASE}/{GEMINI_MODEL}:streamGenerateContent?alt=sse&key={GEMINI_API_KEY}"
+    body = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.3},
+    }
 
-    max_loops = 8
-    for _ in range(max_loops):
-        accumulated_text = ""
-        function_calls   = []
-
-        stream = gemini_client.models.generate_content_stream(
-            model=GEMINI_MODEL,
-            contents=contents,
-            config=config,
-        )
-        for chunk in stream:
-            if not chunk.candidates:
+    with requests.post(url, json=body, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line:
                 continue
-            for part in (chunk.candidates[0].content.parts or []):
-                if part.text:
-                    accumulated_text += part.text
-                    yield f"data: {json.dumps({'type': 'text', 'text': part.text})}\n\n"
-                elif part.function_call:
-                    function_calls.append(part.function_call)
-                    yield f"data: {json.dumps({'type': 'tool_call', 'name': part.function_call.name})}\n\n"
-
-        if not function_calls:
-            break
-
-        # Append model turn
-        model_parts = []
-        if accumulated_text:
-            model_parts.append(types.Part(text=accumulated_text))
-        for fc in function_calls:
-            model_parts.append(types.Part(function_call=fc))
-        contents.append(types.Content(role="model", parts=model_parts))
-
-        # Execute tools and feed results back
-        result_parts = []
-        for fc in function_calls:
-            args = dict(fc.args) if fc.args else {}
-            result_parts.append(types.Part(
-                function_response=types.FunctionResponse(
-                    name=fc.name,
-                    response={"result": _run_tool(fc.name, args)},
-                )
-            ))
-        contents.append(types.Content(role="user", parts=result_parts))
+            line = line.decode("utf-8") if isinstance(line, bytes) else line
+            if not line.startswith("data: "):
+                continue
+            raw = line[6:].strip()
+            if raw in ("[DONE]", ""):
+                continue
+            try:
+                chunk = json.loads(raw)
+                candidates = chunk.get("candidates", [])
+                if not candidates:
+                    continue
+                parts = candidates[0].get("content", {}).get("parts", [])
+                for part in parts:
+                    if "text" in part and part["text"]:
+                        yield f"data: {json.dumps({'type': 'text', 'text': part['text']})}\n\n"
+            except Exception:
+                continue
 
     yield "data: [DONE]\n\n"
 

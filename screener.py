@@ -2,11 +2,28 @@
 screener.py — Scans a universe of top US stocks, filters for strong
 mid-term setups, then uses Gemini + news to rank and explain the best picks.
 """
+import os
 import json
+import requests as _requests
 import concurrent.futures
-from trading_bot import get_stock_data, get_market_news, gemini_client, load_portfolio
-from google.genai import types
-GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"
+from trading_bot import get_stock_data, get_market_news, load_portfolio
+
+GEMINI_MODEL   = "gemini-1.5-flash"
+_GEMINI_API_V1 = "https://generativelanguage.googleapis.com/v1/models"
+
+
+def _gemini_generate(prompt: str, temperature: float = 0.2) -> str:
+    """Call Gemini REST API directly on v1 (bypasses SDK version issues)."""
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    url = f"{_GEMINI_API_V1}/{GEMINI_MODEL}:generateContent?key={api_key}"
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature},
+    }
+    resp = _requests.post(url, json=body, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 # ---------------------------------------------------------------------------
 # Universe — 60+ liquid US stocks across sectors
@@ -191,19 +208,14 @@ CANDIDATE DATA:
 {data_txt}"""
 
     try:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.2),
-            http_options=types.HttpOptions(api_version="v1alpha"),
-        )
+        raw = _gemini_generate(prompt, temperature=0.2)
     except Exception as e:
-        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+        err = str(e)
+        if "429" in err or "RESOURCE_EXHAUSTED" in err:
             return {"suggestions": [], "market_note": "Gemini quota exhausted. Enable billing at aistudio.google.com to use AI watchlist suggestions."}
-        raise
+        return {"suggestions": [], "market_note": f"AI error: {err[:200]}"}
 
-    # Parse JSON from response
-    raw = response.text.strip()
+    raw = raw.strip()
     # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
