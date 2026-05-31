@@ -1,4 +1,4 @@
-openai
+google-genai
 flask
 yfinance
 pandas

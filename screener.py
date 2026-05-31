@@ -4,8 +4,9 @@ mid-term setups, then uses Gemini + news to rank and explain the best picks.
 """
 import json
 import concurrent.futures
-from trading_bot import get_stock_data, get_market_news, perplexity_client, load_portfolio
-PERPLEXITY_MODEL = "sonar"
+from trading_bot import get_stock_data, get_market_news, gemini_client, load_portfolio
+from google.genai import types
+GEMINI_MODEL = "gemini-2.0-flash-lite"
 
 # ---------------------------------------------------------------------------
 # Universe — 60+ liquid US stocks across sectors
@@ -190,18 +191,18 @@ CANDIDATE DATA:
 {data_txt}"""
 
     try:
-        response = perplexity_client.chat.completions.create(
-            model=PERPLEXITY_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2),
         )
     except Exception as e:
-        if "429" in str(e) or "rate_limit" in str(e).lower():
-            return {"suggestions": [], "market_note": "Perplexity rate limit hit. Please try again shortly."}
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            return {"suggestions": [], "market_note": "Gemini quota exhausted. Enable billing at aistudio.google.com to use AI watchlist suggestions."}
         raise
 
     # Parse JSON from response
-    raw = response.choices[0].message.content.strip()
+    raw = response.text.strip()
     # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
