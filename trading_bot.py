@@ -5,8 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import yfinance as yf
 import requests
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from openai import OpenAI
 from twilio.rest import Client as TwilioClient
 
 load_dotenv()
@@ -14,8 +13,11 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Clients
 # ---------------------------------------------------------------------------
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-GEMINI_MODEL  = "gemini-2.0-flash-lite"
+perplexity_client = OpenAI(
+    api_key=os.getenv("PERPLEXITY_API_KEY"),
+    base_url="https://api.perplexity.ai",
+)
+PERPLEXITY_MODEL = "sonar"   # sonar = fast + web search built-in
 
 twilio_client = TwilioClient(
     os.getenv("TWILIO_ACCOUNT_SID"),
@@ -80,7 +82,6 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
         avg_vol   = float(hist["Volume"].rolling(20).mean().iloc[-1])
         today_vol = float(hist["Volume"].iloc[-1])
 
-        # 1-month and 3-month price change
         change_1m = round((current_price - float(close.iloc[-22])) / float(close.iloc[-22]) * 100, 2) if len(close) >= 22 else None
         change_3m = round((current_price - float(close.iloc[0]))  / float(close.iloc[0])  * 100, 2)
 
@@ -185,14 +186,12 @@ def get_market_news(query: str, max_articles: int = 5) -> list:
 
 
 def get_ticker_full_report(ticker: str) -> dict:
-    """Technical data + news combined for one ticker."""
-    tech  = get_stock_data(ticker)
-    news  = get_market_news(ticker, max_articles=5)
+    tech = get_stock_data(ticker)
+    news = get_market_news(ticker, max_articles=5)
     return {"technical": tech, "news": news}
 
 
 def get_all_tickers_report() -> dict:
-    """Full report for holdings + watchlist: technicals + news — fully parallel."""
     portfolio = load_portfolio()
     holdings  = portfolio.get("holdings", [])
     watchlist = portfolio.get("watchlist", [])
@@ -240,55 +239,12 @@ def send_whatsapp(message: str, to: str | None = None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Gemini native tool definitions
-# ---------------------------------------------------------------------------
-
-def _get_stock_data_tool(ticker: str, period: str = "1mo") -> dict:
-    """Fetch live price and technical indicators (RSI, MACD, Bollinger Bands, MAs, volume) for a US stock or crypto ticker."""
-    return get_stock_data(ticker, period)
-
-def _get_portfolio_snapshot_tool() -> list:
-    """Get live technical data and P&L for ALL holdings in the user's current portfolio."""
-    return get_portfolio_snapshot()
-
-def _get_watchlist_snapshot_tool() -> list:
-    """Get live technical data for ALL tickers on the user's watchlist (potential buys)."""
-    return get_watchlist_snapshot()
-
-def _get_ticker_full_report_tool(ticker: str) -> dict:
-    """Get combined technical analysis AND latest market news for a single ticker."""
-    return get_ticker_full_report(ticker)
-
-def _get_all_tickers_report_tool() -> dict:
-    """Get full report (technicals + news) for ALL holdings AND watchlist at once."""
-    return get_all_tickers_report()
-
-def _get_market_news_tool(query: str, max_articles: int = 6) -> list:
-    """Fetch latest news headlines from Yahoo Finance for a ticker or topic."""
-    return get_market_news(query, max_articles)
-
-def _send_whatsapp_alert_tool(message: str) -> dict:
-    """Send an urgent alert to the trader's WhatsApp when warning conditions are detected."""
-    return {"sent": send_whatsapp(message), "message": message}
-
-GEMINI_TOOLS = [
-    _get_stock_data_tool,
-    _get_portfolio_snapshot_tool,
-    _get_watchlist_snapshot_tool,
-    _get_ticker_full_report_tool,
-    _get_all_tickers_report_tool,
-    _get_market_news_tool,
-    _send_whatsapp_alert_tool,
-]
-
-
-# ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
 
 def build_system_prompt() -> str:
-    portfolio  = load_portfolio()
-    today      = datetime.now().strftime("%A, %B %d, %Y %H:%M ET")
+    portfolio = load_portfolio()
+    today     = datetime.now().strftime("%A, %B %d, %Y %H:%M ET")
 
     holdings_txt = "\n".join(
         f"  - {h['ticker']}: {h['quantity']} shares @ avg ${h['avg_buy_price']}"
@@ -311,7 +267,6 @@ TODAY: {today}
 2. **News & Sentiment** — Always include recent news when analyzing any ticker. Flag earnings dates, analyst upgrades/downgrades, product launches, macro events (Fed, CPI, jobs) that could move the stock.
 3. **Watchlist Opportunities** — For watchlist tickers, give a BUY SETUP analysis: is there a good entry point? What price level to enter? What's the catalyst? What's the risk/reward?
 4. **Warnings** — Alert immediately for holdings: RSI extremes, MACD crossovers, sharp price drops, Bollinger extremes.
-5. **WhatsApp Alerts** — Send automatically when urgent conditions are detected.
 
 ## REPORT FORMAT
 For every ticker report, always include ALL of these sections:
@@ -324,55 +279,64 @@ For every ticker report, always include ALL of these sections:
 - **Verdict:** BUY / HOLD / REDUCE / WATCH — with specific reasoning and time horizon
 - **Entry/Stop:** suggested entry price range, stop-loss level, target price (for BUY/WATCH)
 
-## WATCHLIST ANALYSIS RULES
-- For watchlist tickers, your job is to decide: *Is now a good time to start a position?*
-- Always check both technicals AND news before giving a verdict
-- Give a specific entry price, stop-loss, and target for mid-term (2–8 weeks)
-- Highlight the main catalyst that could drive the stock up
-
 ## TRADING STYLE
 - Mid-term horizon: 1 week to 3 months
 - Focus on swing trades, momentum, sector rotation, macro catalysts
 - Risk-conscious: always include stop-loss levels
 
 Respond in the same language the user writes in (English or Vietnamese).
-Always use tools for live data — never guess prices or news from memory."""
+You have access to real-time web search — always search for the latest news and price data for any ticker mentioned."""
 
 
 # ---------------------------------------------------------------------------
-# Streaming chat with Gemini tool use
+# Determine what data to pre-fetch based on user message
 # ---------------------------------------------------------------------------
 
-def _run_tool(name: str, args: dict) -> str:
-    if   name in ("_get_stock_data_tool",        "get_stock_data"):
-        raw = get_stock_data(args.get("ticker",""), args.get("period","1mo"))
-    elif name in ("_get_portfolio_snapshot_tool", "get_portfolio_snapshot"):
-        raw = get_portfolio_snapshot()
-    elif name in ("_get_watchlist_snapshot_tool", "get_watchlist_snapshot"):
-        raw = get_watchlist_snapshot()
-    elif name in ("_get_ticker_full_report_tool", "get_ticker_full_report"):
-        raw = get_ticker_full_report(args.get("ticker",""))
-    elif name in ("_get_all_tickers_report_tool", "get_all_tickers_report"):
-        raw = get_all_tickers_report()
-    elif name in ("_get_market_news_tool",        "get_market_news"):
-        raw = get_market_news(args.get("query",""), args.get("max_articles",6))
-    elif name in ("_send_whatsapp_alert_tool",    "send_whatsapp_alert"):
-        raw = {"sent": send_whatsapp(args.get("message","")), "message": args.get("message","")}
+def _prefetch_data(user_message: str) -> str:
+    """Pre-fetch relevant stock data and inject into the prompt context."""
+    msg_lower = user_message.lower()
+    data_parts = []
+
+    portfolio = load_portfolio()
+    holdings  = [h["ticker"] for h in portfolio.get("holdings", [])]
+    watchlist = portfolio.get("watchlist", [])
+    all_tickers = holdings + watchlist
+
+    # Detect if asking about all positions / full portfolio
+    if any(kw in msg_lower for kw in ["all", "portfolio", "positions", "holdings", "everything", "tất cả", "danh mục"]):
+        snapshot = get_portfolio_snapshot()
+        watch_snap = get_watchlist_snapshot()
+        data_parts.append("LIVE PORTFOLIO DATA:\n" + json.dumps(snapshot, default=str, indent=1))
+        data_parts.append("LIVE WATCHLIST DATA:\n" + json.dumps(watch_snap, default=str, indent=1))
     else:
-        raw = {"error": f"Unknown tool: {name}"}
-    return json.dumps(raw, default=str)
+        # Check for specific tickers mentioned
+        mentioned = [t for t in all_tickers if t.upper() in user_message.upper()]
+        if not mentioned:
+            # Default: fetch portfolio snapshot for general questions
+            snapshot = get_portfolio_snapshot()
+            data_parts.append("LIVE PORTFOLIO DATA:\n" + json.dumps(snapshot, default=str, indent=1))
+        else:
+            for ticker in mentioned:
+                report = get_ticker_full_report(ticker)
+                data_parts.append(f"LIVE DATA for {ticker}:\n" + json.dumps(report, default=str, indent=1))
 
+    return "\n\n".join(data_parts)
+
+
+# ---------------------------------------------------------------------------
+# Streaming chat with Perplexity
+# ---------------------------------------------------------------------------
 
 def chat_stream(user_message: str, history: list[dict]):
-    """Yields SSE strings. Runs Gemini tool-use loop with streaming."""
+    """Yields SSE strings. Pre-fetches live data then streams Perplexity response."""
     try:
         yield from _chat_stream_inner(user_message, history)
     except Exception as e:
         err = str(e)
-        if "429" in err or "RESOURCE_EXHAUSTED" in err:
-            msg = ("Gemini API quota exhausted. The free tier allows 50 requests/day. "
-                   "To fix: go to aistudio.google.com, enable billing on your API key "
-                   "(costs ~$0.01/day for normal usage). Quota resets at 3 PM Vietnam time.")
+        if "401" in err or "invalid_api_key" in err.lower() or "unauthorized" in err.lower():
+            msg = "Perplexity API key invalid. Check PERPLEXITY_API_KEY in Railway Variables."
+        elif "429" in err or "rate_limit" in err.lower():
+            msg = "Perplexity rate limit hit. Please wait a moment and try again."
         else:
             msg = f"Error: {err[:300]}"
         yield f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n"
@@ -380,64 +344,33 @@ def chat_stream(user_message: str, history: list[dict]):
 
 
 def _chat_stream_inner(user_message: str, history: list[dict]):
-    """Inner streaming logic."""
-    system   = build_system_prompt()
-    contents = []
+    """Inner streaming logic — pre-fetch data, then stream Perplexity."""
+    system = build_system_prompt()
 
+    # Pre-fetch live stock data and inject into user message
+    yield f"data: {json.dumps({'type': 'tool_call', 'name': 'fetch_live_data'})}\n\n"
+    live_data = _prefetch_data(user_message)
+
+    augmented_message = f"{user_message}\n\n---\n{live_data}" if live_data else user_message
+
+    # Build messages
+    messages = [{"role": "system", "content": system}]
     for turn in history[-20:]:
-        role = "model" if turn["role"] == "assistant" else "user"
-        contents.append(types.Content(role=role, parts=[types.Part(text=turn["content"])]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": augmented_message})
 
-    config = types.GenerateContentConfig(
-        system_instruction=system,
-        tools=GEMINI_TOOLS,
+    # Stream from Perplexity
+    stream = perplexity_client.chat.completions.create(
+        model=PERPLEXITY_MODEL,
+        messages=messages,
+        stream=True,
         temperature=0.3,
     )
 
-    max_loops = 8
-    for _ in range(max_loops):
-        accumulated_text = ""
-        function_calls   = []
-
-        stream = gemini_client.models.generate_content_stream(
-            model=GEMINI_MODEL,
-            contents=contents,
-            config=config,
-        )
-        for chunk in stream:
-            if not chunk.candidates:
-                continue
-            for part in (chunk.candidates[0].content.parts or []):
-                if part.text:
-                    accumulated_text += part.text
-                    yield f"data: {json.dumps({'type': 'text', 'text': part.text})}\n\n"
-                elif part.function_call:
-                    function_calls.append(part.function_call)
-                    yield f"data: {json.dumps({'type': 'tool_call', 'name': part.function_call.name})}\n\n"
-
-        if not function_calls:
-            break
-
-        # Append model turn
-        model_parts = []
-        if accumulated_text:
-            model_parts.append(types.Part(text=accumulated_text))
-        for fc in function_calls:
-            model_parts.append(types.Part(function_call=fc))
-        contents.append(types.Content(role="model", parts=model_parts))
-
-        # Execute tools and feed results back
-        result_parts = []
-        for fc in function_calls:
-            args = dict(fc.args) if fc.args else {}
-            result_parts.append(types.Part(
-                function_response=types.FunctionResponse(
-                    name=fc.name,
-                    response={"result": _run_tool(fc.name, args)},
-                )
-            ))
-        contents.append(types.Content(role="user", parts=result_parts))
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta.content:
+            yield f"data: {json.dumps({'type': 'text', 'text': delta.content})}\n\n"
 
     yield "data: [DONE]\n\n"
 
@@ -455,7 +388,6 @@ def run_daily_digest() -> str:
     now = datetime.now().strftime("%b %d %H:%M")
     lines.append(f"Trading Sentinel — {now}\n")
 
-    # Holdings
     lines.append("== HOLDINGS ==")
     for s in snapshot:
         if "error" in s:
@@ -476,7 +408,6 @@ def run_daily_digest() -> str:
         sig_txt = " | " + ", ".join(signals) if signals else ""
         lines.append(f"{flag} {ticker} ${price:,.2f} ({chg:+.1f}%) PnL:${pnl:+,.0f}{sig_txt}")
 
-    # Watchlist
     lines.append("\n== WATCHLIST ==")
     for s in watchlist:
         if "error" in s:
