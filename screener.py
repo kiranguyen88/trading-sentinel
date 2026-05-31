@@ -190,11 +190,16 @@ Respond in this EXACT JSON format:
 CANDIDATE DATA:
 {data_txt}"""
 
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.2),
-    )
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2),
+        )
+    except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            return {"suggestions": [], "market_note": "Gemini quota exhausted. Enable billing at aistudio.google.com to use AI watchlist suggestions."}
+        raise
 
     # Parse JSON from response
     raw = response.text.strip()

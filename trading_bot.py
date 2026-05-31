@@ -365,6 +365,22 @@ def _run_tool(name: str, args: dict) -> str:
 
 def chat_stream(user_message: str, history: list[dict]):
     """Yields SSE strings. Runs Gemini tool-use loop with streaming."""
+    try:
+        yield from _chat_stream_inner(user_message, history)
+    except Exception as e:
+        err = str(e)
+        if "429" in err or "RESOURCE_EXHAUSTED" in err:
+            msg = ("Gemini API quota exhausted. The free tier allows 50 requests/day. "
+                   "To fix: go to aistudio.google.com, enable billing on your API key "
+                   "(costs ~$0.01/day for normal usage). Quota resets at 3 PM Vietnam time.")
+        else:
+            msg = f"Error: {err[:300]}"
+        yield f"data: {json.dumps({'type': 'text', 'text': msg})}\n\n"
+        yield "data: [DONE]\n\n"
+
+
+def _chat_stream_inner(user_message: str, history: list[dict]):
+    """Inner streaming logic."""
     system   = build_system_prompt()
     contents = []
 
