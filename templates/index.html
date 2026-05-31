@@ -216,7 +216,6 @@
   <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest + WhatsApp</button>
   <button id="check-btn" onclick="triggerCheckNow()" style="background:var(--yellow);color:#000;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600;margin-left:6px">⚡ Check Warnings Now</button>
   <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:#6e40c9;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600;margin-left:6px">🔍 Auto-Suggest Watchlist</button>
-  <button onclick="openPortfolioModal()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600;margin-left:6px">✏️ Edit Portfolio</button>
 </header>
 
 <!-- Portfolio Edit Modal -->
@@ -254,7 +253,10 @@
   <div class="sidebar">
     <div class="sidebar-header">
       Portfolio
-      <button id="refresh-btn" onclick="loadPortfolio()" title="Refresh">↻</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button onclick="openPortfolioModal()" title="Edit Portfolio" style="background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:0.7rem;padding:2px 8px;border-radius:4px;font-weight:600">✏️ Edit</button>
+        <button id="refresh-btn" onclick="loadPortfolio()" title="Refresh">↻</button>
+      </div>
     </div>
     <div class="sidebar-panel">
       <div id="holdings"><div style="padding:16px;color:var(--muted);font-size:.8rem">Loading...</div></div>
