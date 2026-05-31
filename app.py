@@ -221,6 +221,23 @@ def check_now():
     return jsonify({"message": "Warning check complete. Alerts sent to WhatsApp if any found."})
 
 
+@app.route("/portfolio-data")
+def portfolio_data():
+    return jsonify(load_portfolio())
+
+
+@app.route("/portfolio-update", methods=["POST"])
+def portfolio_update():
+    data = request.json or {}
+    portfolio = load_portfolio()
+    portfolio["holdings"]        = data.get("holdings", portfolio.get("holdings", []))
+    portfolio["watchlist"]       = data.get("watchlist", portfolio.get("watchlist", []))
+    portfolio["whatsapp_number"] = data.get("whatsapp_number", portfolio.get("whatsapp_number", ""))
+    with open("portfolio.json", "w") as f:
+        json.dump(portfolio, f, indent=2)
+    return jsonify({"ok": True})
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     body = request.json or {}
