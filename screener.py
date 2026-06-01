@@ -26,18 +26,71 @@ def _gemini_generate(prompt: str, temperature: float = 0.2) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 # ---------------------------------------------------------------------------
-# Universe — 60+ liquid US stocks across sectors
+# Universe — 200+ liquid US stocks across sectors
 # ---------------------------------------------------------------------------
 UNIVERSE = {
-    "Tech":        ["NVDA", "MSFT", "AAPL", "META", "GOOGL", "AMZN", "AMD", "AVGO", "ORCL", "CRM",
-                    "PLTR", "SNOW", "NOW", "MSTR", "SMCI"],
-    "AI/Semis":    ["ARM", "AMAT", "LRCX", "KLAC", "MU", "TSM", "INTC", "QCOM"],
-    "Finance":     ["JPM", "GS", "V", "MA", "BRK-B", "BAC", "MS", "COIN"],
-    "Healthcare":  ["LLY", "NVO", "UNH", "ABBV", "JNJ", "MRK", "ISRG"],
-    "Energy":      ["XOM", "CVX", "SLB", "OXY"],
-    "Consumer":    ["TSLA", "AMZN", "NKE", "SBUX", "HD", "MCD"],
-    "Defense/Aero":["LMT", "RTX", "NOC", "GE"],
-    "ETFs":        ["QQQ", "SPY", "SOXX", "XLK", "ARKK"],
+    "Tech": [
+        "NVDA", "MSFT", "AAPL", "META", "GOOGL", "GOOG", "AMZN", "AMD", "AVGO", "ORCL",
+        "CRM", "PLTR", "SNOW", "NOW", "MSTR", "SMCI", "ADBE", "INTU", "UBER", "LYFT",
+        "ABNB", "DASH", "RBLX", "U", "TTWO", "EA", "ATVI", "SPOT", "PINS", "SNAP",
+        "TWLO", "ZM", "DOCN", "NET", "FSLY", "MDB", "DDOG", "ZS", "CRWD", "OKTA",
+        "GTLB", "HCP", "BILL", "HUBS", "SHOP", "WIX", "WDAY", "VEEV", "PCTY", "PAYC",
+    ],
+    "AI/Semis": [
+        "ARM", "AMAT", "LRCX", "KLAC", "MU", "TSM", "INTC", "QCOM", "TXN", "MRVL",
+        "ON", "SWKS", "QRVO", "MPWR", "ENTG", "ASML", "WOLF", "AMKR", "CRUS", "SITM",
+        "SMTC", "AMBA", "COHU", "ACLS", "ONTO",
+    ],
+    "Finance": [
+        "JPM", "GS", "V", "MA", "BRK-B", "BAC", "MS", "COIN", "C", "WFC", "AXP",
+        "BLK", "SCHW", "HOOD", "SQ", "PYPL", "FIS", "FISV", "ICE", "CME", "CBOE",
+        "MCO", "SPGI", "AFL", "MET", "PRU", "TRV", "ALL", "PGR", "CB",
+    ],
+    "Healthcare": [
+        "LLY", "NVO", "UNH", "ABBV", "JNJ", "MRK", "ISRG", "PFE", "AMGN", "GILD",
+        "BMY", "BIIB", "VRTX", "REGN", "MRNA", "BNTX", "CVS", "CI", "HUM", "ELV",
+        "TMO", "DHR", "A", "IQV", "IDXX", "ALGN", "STE", "BAX", "BDX", "ZBH",
+        "DXCM", "PODD", "NVCR", "EXAS", "ILMN", "PACB", "NVAX", "SRPT", "BLUE",
+    ],
+    "Energy": [
+        "XOM", "CVX", "SLB", "OXY", "COP", "EOG", "PXD", "MPC", "PSX", "VLO",
+        "HAL", "BKR", "DVN", "FANG", "APA", "MRO", "HES", "NOV", "WMB", "KMI",
+        "ET", "EPD", "LNG", "AR", "RRC", "EQT", "CNX",
+    ],
+    "Consumer/Retail": [
+        "TSLA", "NKE", "SBUX", "HD", "MCD", "AMZN", "WMT", "TGT", "COST", "LOW",
+        "TJX", "ROST", "DG", "DLTR", "BBY", "ETSY", "EBAY", "W", "RH", "CPRI",
+        "TPR", "PVH", "RL", "VFC", "GPS", "ANF", "AEO", "URBN", "BOOT", "ONON",
+        "LULU", "CROX", "DECK", "SKX", "UAA", "COLM", "HBI",
+    ],
+    "Food/Bev": [
+        "MCD", "CMG", "YUM", "QSR", "DPZ", "DNUT", "SHAK", "WING", "TXRH",
+        "KO", "PEP", "MNST", "KHC", "GIS", "K", "CPB", "SJM", "CAG", "MKC",
+    ],
+    "Defense/Aero": [
+        "LMT", "RTX", "NOC", "GE", "BA", "HII", "LHX", "TDG", "HEI", "TXT",
+        "KTOS", "RCAT", "JOBY", "ACHR", "LILM",
+    ],
+    "Industrial": [
+        "CAT", "DE", "HON", "MMM", "EMR", "ITW", "ROK", "PH", "GWW", "FAST",
+        "XYL", "VLTO", "GNRC", "ROP", "AME", "OTIS", "CARR", "TT", "IR", "DOV",
+    ],
+    "Real_Estate/REIT": [
+        "AMT", "PLD", "EQIX", "CCI", "SPG", "O", "VICI", "WPC", "DLR", "PSA",
+        "EXR", "AVB", "EQR", "MAA", "UDR", "CPT", "NNN", "STAG",
+    ],
+    "Utilities": [
+        "NEE", "DUK", "SO", "D", "AEP", "EXC", "XEL", "WEC", "ES", "ETR",
+        "VST", "CEG", "NRG", "PCG", "EIX", "AWK",
+    ],
+    "Materials": [
+        "LIN", "APD", "SHW", "FCX", "NEM", "GOLD", "ALB", "MP", "LTHM",
+        "AA", "X", "CLF", "NUE", "STLD", "RS",
+    ],
+    "ETFs": [
+        "QQQ", "SPY", "SOXX", "XLK", "ARKK", "IWM", "DIA", "XLF", "XLE",
+        "XLV", "XLI", "GLD", "SLV", "TLT", "HYG",
+    ],
 }
 
 ALL_TICKERS = [t for tickers in UNIVERSE.values() for t in tickers]
@@ -105,7 +158,7 @@ def run_screener(top_n: int = 12) -> list[dict]:
     already_own = {h["ticker"] for h in portfolio.get("holdings", [])}
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
         futures = {ex.submit(get_stock_data, ticker): ticker for ticker in ALL_TICKERS}
         for future in concurrent.futures.as_completed(futures):
             ticker = futures[future]
@@ -143,7 +196,7 @@ def ai_suggest_watchlist(top_n_final: int = 6) -> dict:
     4. Return structured result
     """
     print("[Screener] Scanning universe...")
-    candidates = run_screener(top_n=12)
+    candidates = run_screener(top_n=15)
 
     if not candidates:
         return {"suggestions": [], "summary": "No strong setups found right now."}
