@@ -26,70 +26,115 @@ def _gemini_generate(prompt: str, temperature: float = 0.2) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 # ---------------------------------------------------------------------------
-# Universe — 200+ liquid US stocks across sectors
+# Universe — 400+ liquid US stocks across sectors
 # ---------------------------------------------------------------------------
 UNIVERSE = {
-    "Tech": [
+    "Tech_MegaCap": [
         "NVDA", "MSFT", "AAPL", "META", "GOOGL", "GOOG", "AMZN", "AMD", "AVGO", "ORCL",
-        "CRM", "PLTR", "SNOW", "NOW", "MSTR", "SMCI", "ADBE", "INTU", "UBER", "LYFT",
-        "ABNB", "DASH", "RBLX", "U", "TTWO", "EA", "ATVI", "SPOT", "PINS", "SNAP",
-        "TWLO", "ZM", "DOCN", "NET", "FSLY", "MDB", "DDOG", "ZS", "CRWD", "OKTA",
-        "GTLB", "HCP", "BILL", "HUBS", "SHOP", "WIX", "WDAY", "VEEV", "PCTY", "PAYC",
+        "CRM", "ADBE", "INTU", "NOW", "SNPS", "CDNS", "ANSS", "PTC", "CTSH", "ACN",
+    ],
+    "Tech_Growth": [
+        "PLTR", "SNOW", "MSTR", "SMCI", "UBER", "LYFT", "ABNB", "DASH", "RBLX", "U",
+        "TTWO", "EA", "SPOT", "PINS", "SNAP", "TWLO", "ZM", "DOCN", "NET", "FSLY",
+        "MDB", "DDOG", "ZS", "CRWD", "OKTA", "GTLB", "BILL", "HUBS", "SHOP", "WDAY",
+        "VEEV", "PCTY", "PAYC", "WIX", "APP", "APPLOVIN", "TTD", "MGNI", "PUBM", "DV",
+    ],
+    "Tech_Infrastructure": [
+        "CSCO", "ANET", "JNPR", "NTAP", "PSTG", "ESTC", "NEWR", "SPLK", "SUMO", "DT",
+        "CLOU", "VNT", "GDDY", "WEB", "EGHT", "RNG", "BAND", "AVLR", "NCNO", "COUP",
     ],
     "AI/Semis": [
         "ARM", "AMAT", "LRCX", "KLAC", "MU", "TSM", "INTC", "QCOM", "TXN", "MRVL",
         "ON", "SWKS", "QRVO", "MPWR", "ENTG", "ASML", "WOLF", "AMKR", "CRUS", "SITM",
-        "SMTC", "AMBA", "COHU", "ACLS", "ONTO",
+        "SMTC", "AMBA", "COHU", "ACLS", "ONTO", "FORM", "ICHR", "KLIC", "MKSI", "UCTT",
+        "SLAB", "ALGM", "MTSI", "DIOD", "POWI", "IXYS", "AXTI", "AEIS", "VECO", "LSCC",
     ],
-    "Finance": [
-        "JPM", "GS", "V", "MA", "BRK-B", "BAC", "MS", "COIN", "C", "WFC", "AXP",
-        "BLK", "SCHW", "HOOD", "SQ", "PYPL", "FIS", "FISV", "ICE", "CME", "CBOE",
-        "MCO", "SPGI", "AFL", "MET", "PRU", "TRV", "ALL", "PGR", "CB",
+    "Finance_Banks": [
+        "JPM", "GS", "BAC", "MS", "C", "WFC", "USB", "PNC", "TFC", "COF",
+        "DFS", "SYF", "AXP", "BK", "STT", "NTRS", "CFG", "HBAN", "RF", "FITB",
+        "MTB", "ZION", "CMA", "KEY", "WAL", "PACW", "FHN", "SNV", "IBOC", "CADE",
     ],
-    "Healthcare": [
-        "LLY", "NVO", "UNH", "ABBV", "JNJ", "MRK", "ISRG", "PFE", "AMGN", "GILD",
-        "BMY", "BIIB", "VRTX", "REGN", "MRNA", "BNTX", "CVS", "CI", "HUM", "ELV",
-        "TMO", "DHR", "A", "IQV", "IDXX", "ALGN", "STE", "BAX", "BDX", "ZBH",
-        "DXCM", "PODD", "NVCR", "EXAS", "ILMN", "PACB", "NVAX", "SRPT", "BLUE",
+    "Finance_Markets": [
+        "V", "MA", "BRK-B", "BLK", "SCHW", "HOOD", "SQ", "PYPL", "FIS", "FISV",
+        "ICE", "CME", "CBOE", "MCO", "SPGI", "MSCI", "NDAQ", "LPLA", "RJF", "SF",
+        "COIN", "MARA", "RIOT", "HUT", "CLSK", "BTBT", "BITF", "CIFR", "WULF", "IREN",
     ],
-    "Energy": [
-        "XOM", "CVX", "SLB", "OXY", "COP", "EOG", "PXD", "MPC", "PSX", "VLO",
-        "HAL", "BKR", "DVN", "FANG", "APA", "MRO", "HES", "NOV", "WMB", "KMI",
-        "ET", "EPD", "LNG", "AR", "RRC", "EQT", "CNX",
+    "Finance_Insurance": [
+        "AFL", "MET", "PRU", "TRV", "ALL", "PGR", "CB", "AIG", "HIG", "MKL",
+        "RNR", "RE", "EG", "ACGL", "WRB", "AIZ", "GL", "CNO", "FGL", "PFG",
     ],
-    "Consumer/Retail": [
-        "TSLA", "NKE", "SBUX", "HD", "MCD", "AMZN", "WMT", "TGT", "COST", "LOW",
-        "TJX", "ROST", "DG", "DLTR", "BBY", "ETSY", "EBAY", "W", "RH", "CPRI",
-        "TPR", "PVH", "RL", "VFC", "GPS", "ANF", "AEO", "URBN", "BOOT", "ONON",
-        "LULU", "CROX", "DECK", "SKX", "UAA", "COLM", "HBI",
+    "Healthcare_Pharma": [
+        "LLY", "NVO", "ABBV", "JNJ", "MRK", "PFE", "AMGN", "GILD", "BMY", "BIIB",
+        "VRTX", "REGN", "MRNA", "BNTX", "AZN", "NVS", "SNY", "TAK", "ELAN", "JAZZ",
+        "INCY", "ALNY", "BMRN", "RARE", "FOLD", "PTCT", "ACAD", "SAGE", "ARWR", "BEAM",
     ],
-    "Food/Bev": [
-        "MCD", "CMG", "YUM", "QSR", "DPZ", "DNUT", "SHAK", "WING", "TXRH",
+    "Healthcare_Devices": [
+        "ISRG", "TMO", "DHR", "A", "IQV", "IDXX", "ALGN", "STE", "BAX", "BDX",
+        "ZBH", "DXCM", "PODD", "EW", "SYK", "MDT", "ABT", "BSX", "HOLX", "QDEL",
+        "NVCR", "EXAS", "ILMN", "PACB", "NVAX", "SRPT", "BLUE", "RXRX", "SDGR", "TWST",
+    ],
+    "Healthcare_Services": [
+        "UNH", "CVS", "CI", "HUM", "ELV", "MOH", "CNC", "DVA", "ENSG", "ACHC",
+        "HCA", "THC", "UHS", "CYH", "SGRY", "AMSF", "ADUS", "AMEDISYS", "LHC", "OPCH",
+    ],
+    "Energy_Oil": [
+        "XOM", "CVX", "COP", "EOG", "PXD", "OXY", "MPC", "PSX", "VLO", "HES",
+        "DVN", "FANG", "APA", "MRO", "HAL", "SLB", "BKR", "NOV", "HP", "PTEN",
+        "RIG", "VAL", "NE", "DO", "PBF", "DKL", "PARR", "CLMT", "DINO", "CAPL",
+    ],
+    "Energy_Gas": [
+        "WMB", "KMI", "ET", "EPD", "LNG", "AR", "RRC", "EQT", "CNX", "CRK",
+        "SWN", "GPOR", "CTRA", "MTDR", "ESTE", "REX", "SM", "BATL", "TALO", "VTLE",
+    ],
+    "Energy_Clean": [
+        "NEE", "ENPH", "SEDG", "FSLR", "RUN", "NOVA", "ARRY", "SHLS", "STEM", "REZI",
+        "BE", "PLUG", "FCEL", "BLDP", "NKLA", "HYLN", "EVGO", "CHPT", "BLNK", "SBE",
+    ],
+    "Consumer_Discretionary": [
+        "TSLA", "NKE", "HD", "LOW", "COST", "WMT", "TGT", "TJX", "ROST", "DG",
+        "DLTR", "BBY", "ETSY", "EBAY", "W", "RH", "LULU", "CROX", "DECK", "ONON",
+        "SKX", "UAA", "BOOT", "ANF", "AEO", "URBN", "GPS", "CPRI", "TPR", "PVH",
+        "RL", "VFC", "COLM", "HBI", "GOOS", "LEVI", "BURL", "FIVE", "OLLI", "BIG",
+    ],
+    "Consumer_Auto": [
+        "TSLA", "F", "GM", "RIVN", "LCID", "NIO", "LI", "XPEV", "PSNY", "FSR",
+        "GOEV", "WKHS", "RIDE", "SOLO", "KNDI", "IDEX", "AYRO", "NKLA", "HYZN", "SEV",
+    ],
+    "Food_Bev": [
+        "MCD", "CMG", "SBUX", "YUM", "QSR", "DPZ", "DNUT", "SHAK", "WING", "TXRH",
         "KO", "PEP", "MNST", "KHC", "GIS", "K", "CPB", "SJM", "CAG", "MKC",
+        "TAP", "SAM", "BF-B", "STZ", "CELH", "FIZZ", "COKE", "PRMW", "NAPA", "EAST",
     ],
-    "Defense/Aero": [
+    "Defense_Aero": [
         "LMT", "RTX", "NOC", "GE", "BA", "HII", "LHX", "TDG", "HEI", "TXT",
-        "KTOS", "RCAT", "JOBY", "ACHR", "LILM",
+        "KTOS", "CACI", "SAIC", "BAH", "LDOS", "DRS", "PLTR", "BWXT", "GD", "AXON",
+        "TNET", "OSIS", "FLIR", "AVAV", "UAVS", "RCAT", "JOBY", "ACHR", "LILM", "ASTR",
     ],
     "Industrial": [
         "CAT", "DE", "HON", "MMM", "EMR", "ITW", "ROK", "PH", "GWW", "FAST",
-        "XYL", "VLTO", "GNRC", "ROP", "AME", "OTIS", "CARR", "TT", "IR", "DOV",
+        "XYL", "GNRC", "ROP", "AME", "OTIS", "CARR", "TT", "IR", "DOV", "FTV",
+        "NDSN", "FLOW", "MIDD", "CFX", "ESAB", "GTLS", "CSWI", "AAON", "AIRC", "GFF",
+        "WMS", "CORE", "IIVI", "II", "ALGT", "MATX", "ARCB", "ODFL", "SAIA", "XPO",
     ],
-    "Real_Estate/REIT": [
-        "AMT", "PLD", "EQIX", "CCI", "SPG", "O", "VICI", "WPC", "DLR", "PSA",
-        "EXR", "AVB", "EQR", "MAA", "UDR", "CPT", "NNN", "STAG",
+    "Real_Estate": [
+        "AMT", "PLD", "EQIX", "CCI", "SPG", "O", "VICI", "DLR", "PSA", "EXR",
+        "AVB", "EQR", "MAA", "UDR", "CPT", "NNN", "STAG", "WPC", "COLD", "REXR",
+        "FR", "EGP", "LXP", "IIPR", "SAFE", "PINE", "GOOD", "LAND", "GIPR", "PLYM",
     ],
     "Utilities": [
         "NEE", "DUK", "SO", "D", "AEP", "EXC", "XEL", "WEC", "ES", "ETR",
-        "VST", "CEG", "NRG", "PCG", "EIX", "AWK",
+        "VST", "CEG", "NRG", "PCG", "EIX", "AWK", "SRE", "PPL", "CMS", "LNT",
+        "EVRG", "POR", "NWE", "AVA", "IDACORP", "MGE", "OTTR", "UTL", "CWCO", "MSEX",
     ],
     "Materials": [
         "LIN", "APD", "SHW", "FCX", "NEM", "GOLD", "ALB", "MP", "LTHM",
-        "AA", "X", "CLF", "NUE", "STLD", "RS",
+        "AA", "X", "CLF", "NUE", "STLD", "RS", "CMC", "ZEUS", "KALU", "ATI", "CRS",
+        "CC", "OLN", "EMN", "CE", "HUN", "RPM", "FUL", "H", "TREX", "UFPI",
     ],
     "ETFs": [
-        "QQQ", "SPY", "SOXX", "XLK", "ARKK", "IWM", "DIA", "XLF", "XLE",
-        "XLV", "XLI", "GLD", "SLV", "TLT", "HYG",
+        "QQQ", "SPY", "SOXX", "XLK", "ARKK", "IWM", "DIA", "XLF", "XLE", "XLV",
+        "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE", "GLD", "SLV", "TLT", "HYG",
+        "VTI", "VOO", "VGT", "VHT", "VDE", "VFH", "ARKW", "ARKG", "ARKF", "ARKQ",
     ],
 }
 
@@ -158,7 +203,7 @@ def run_screener(top_n: int = 12) -> list[dict]:
     already_own = {h["ticker"] for h in portfolio.get("holdings", [])}
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
         futures = {ex.submit(get_stock_data, ticker): ticker for ticker in ALL_TICKERS}
         for future in concurrent.futures.as_completed(futures):
             ticker = futures[future]
