@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commonplace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Cormorant+Infant:ital,wght@0,300;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #f0e6d3;
+    --ink-dim: rgba(240, 230, 211, 0.55);
+    --gold: #c9a55a;
+    --gold-dim: rgba(201, 165, 90, 0.3);
+    --shadow: rgba(0,0,0,0.85);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #080808;
+    cursor: none;
+  }
+
+  /* ── Custom cursor ── */
+  .cursor {
+    position: fixed;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--gold);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s ease, width 0.25s ease, height 0.25s ease, opacity 0.25s ease;
+    mix-blend-mode: screen;
+  }
+  .cursor-ring {
+    position: fixed;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(201, 165, 90, 0.5);
+    pointer-events: none;
+    z-index: 9998;
+    transform: translate(-50%, -50%);
+    transition: transform 0.18s ease, width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+  }
+  body:hover .cursor { opacity: 1; }
+
+  /* ── Scene ── */
+  #scene {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── Background image layers ── */
+  .bg-layer {
+    position: absolute; inset: 0;
+    background-size: cover;
+    background-position: center;
+    transition: opacity 1.8s ease;
+    opacity: 0;
+    transform: scale(1.04);
+    animation: slowdrift 30s ease-in-out infinite alternate;
+  }
+  .bg-layer.visible { opacity: 1; }
+  .bg-layer.exiting { opacity: 0; }
+
+  @keyframes slowdrift {
+    from { transform: scale(1.04) translate(0, 0); }
+    to   { transform: scale(1.08) translate(-1%, -0.5%); }
+  }
+
+  /* ── Overlays ── */
+  .overlay-gradient {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 80% at 50% 50%, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.82) 100%);
+    z-index: 1;
+  }
+  .overlay-grain {
+    position: absolute; inset: 0;
+    z-index: 2;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+    animation: grainshift 0.15s steps(1) infinite;
+    pointer-events: none;
+  }
+  @keyframes grainshift {
+    0%  { background-position: 0 0; }
+    25% { background-position: -30px 15px; }
+    50% { background-position: 15px -10px; }
+    75% { background-position: -15px 25px; }
+  }
+
+  /* vignette corners */
+  .overlay-vignette {
+    position: absolute; inset: 0;
+    z-index: 3;
+    background:
+      radial-gradient(ellipse 120% 120% at 50% 50%,
+        transparent 35%,
+        rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+  }
+
+  /* ── Quote card ── */
+  #card {
+    position: relative;
+    z-index: 10;
+    max-width: min(680px, 88vw);
+    text-align: center;
+    padding: 0 2rem;
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  #card.hidden {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  .ornament {
+    display: block;
+    margin: 0 auto 2.2rem;
+    width: 48px; height: 1px;
+    position: relative;
+  }
+  .ornament::before, .ornament::after {
+    content: '';
+    position: absolute;
+    top: 0; height: 1px;
+    background: var(--gold);
+  }
+  .ornament::before { left: 0; width: 42%; }
+  .ornament::after  { right: 0; width: 42%; }
+  .ornament span {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 5px; height: 5px;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    background: transparent;
+    display: block;
+  }
+
+  #quote-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(1.45rem, 3.2vw, 2.15rem);
+    font-weight: 300;
+    font-style: italic;
+    line-height: 1.72;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+    text-shadow: 0 2px 24px rgba(0,0,0,0.7);
+    margin-bottom: 2rem;
+  }
+
+  #quote-attr {
+    font-family: 'Cormorant Infant', serif;
+    font-size: clamp(0.78rem, 1.4vw, 0.9rem);
+    font-weight: 300;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+    text-shadow: 0 1px 12px rgba(0,0,0,0.6);
+    margin-bottom: 0.4rem;
+  }
+
+  #quote-source {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(0.72rem, 1.2vw, 0.82rem);
+    font-weight: 300;
+    font-style: italic;
+    color: var(--ink-dim);
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Bottom bar ── */
+  #bottom-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.4rem 2.4rem 1.8rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+  }
+
+  .site-label {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(240,230,211,0.3);
+    font-weight: 400;
+  }
+
+  #btn-next {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    background: none;
+    border: 1px solid rgba(201, 165, 90, 0.35);
+    color: var(--gold);
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    padding: 0.55rem 1.3rem;
+    cursor: none;
+    transition: border-color 0.3s, background 0.3s, color 0.3s;
+    border-radius: 1px;
+  }
+  #btn-next:hover {
+    border-color: var(--gold);
+    background: rgba(201, 165, 90, 0.08);
+    color: var(--ink);
+  }
+  #btn-next svg {
+    transition: transform 0.35s ease;
+  }
+  #btn-next:hover svg {
+    transform: rotate(45deg);
+  }
+
+  /* ── Category pill ── */
+  #cat-pill {
+    position: fixed;
+    top: 1.8rem; right: 2rem;
+    z-index: 20;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(240,230,211,0.35);
+    font-weight: 300;
+    transition: opacity 0.5s;
+  }
+
+  /* page-load fade in */
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  #card { animation: fadein 1.4s ease both; }
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cur"></div>
+<div class="cursor-ring" id="cur-ring"></div>
+
+<div id="scene">
+  <div class="bg-layer" id="bg-a"></div>
+  <div class="bg-layer" id="bg-b"></div>
+  <div class="overlay-gradient"></div>
+  <div class="overlay-grain"></div>
+  <div class="overlay-vignette"></div>
+
+  <div id="card">
+    <span class="ornament"><span></span></span>
+    <p id="quote-text"></p>
+    <p id="quote-attr"></p>
+    <p id="quote-source"></p>
+  </div>
+</div>
+
+<div id="cat-pill" id="cat-pill"></div>
+
+<div id="bottom-bar">
+  <span class="site-label">Commonplace</span>
+  <button id="btn-next" aria-label="Next quote">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.2">
+      <line x1="6.5" y1="1" x2="6.5" y2="12"/>
+      <line x1="1" y1="6.5" x2="12" y2="6.5"/>
+    </svg>
+    Next
+  </button>
+</div>
+
+<script>
+const QUOTES = [
+  // Philosophy
+  { text: "The unexamined life is not worth living.", author: "Socrates", source: "Apology, 399 BC", cat: "Philosophy" },
+  { text: "We suffer more in imagination than in reality.", author: "Seneca", source: "Letters to Lucilius", cat: "Philosophy" },
+  { text: "Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.", author: "Jean-Paul Sartre", source: "Existentialism is a Humanism, 1945", cat: "Philosophy" },
+  { text: "He who has a why to live can bear almost any how.", author: "Friedrich Nietzsche", source: "Twilight of the Idols, 1888", cat: "Philosophy" },
+  { text: "The limits of my language mean the limits of my world.", author: "Ludwig Wittgenstein", source: "Tractatus Logico-Philosophicus, 1921", cat: "Philosophy" },
+  { text: "To do as one wishes, and to live with no regrets — this is the only freedom.", author: "Albert Camus", source: "The Myth of Sisyphus, 1942", cat: "Philosophy" },
+  { text: "In individuals, insanity is rare; but in groups, parties, nations and epochs, it is the rule.", author: "Friedrich Nietzsche", source: "Beyond Good and Evil, 1886", cat: "Philosophy" },
+  { text: "One cannot step twice into the same river.", author: "Heraclitus", source: "Fragment 12, c. 500 BC", cat: "Philosophy" },
+  { text: "The owl of Minerva spreads its wings only with the falling of the dusk.", author: "G.W.F. Hegel", source: "Philosophy of Right, 1820", cat: "Philosophy" },
+  { text: "What is rational is actual and what is actual is rational.", author: "G.W.F. Hegel", source: "Philosophy of Right, 1820", cat: "Philosophy" },
+  { text: "Time is a flat circle.", author: "Friedrich Nietzsche", source: "Thus Spoke Zarathustra, 1883", cat: "Philosophy" },
+  { text: "Man is the measure of all things.", author: "Protagoras", source: "Fragment, c. 450 BC", cat: "Philosophy" },
+  { text: "Doubt is not a pleasant condition, but certainty is absurd.", author: "Voltaire", source: "Letter, 1770", cat: "Philosophy" },
+  { text: "The philosophy of one century is the common sense of the next.", author: "Henry Ward Beecher", source: "Proverbs from Plymouth Pulpit, 1887", cat: "Philosophy" },
+  { text: "God is dead. God remains dead. And we have killed him.", author: "Friedrich Nietzsche", source: "The Gay Science, 1882", cat: "Philosophy" },
+
+  // Literature
+  { text: "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness.", author: "Charles Dickens", source: "A Tale of Two Cities, 1859", cat: "Literature" },
+  { text: "All happy families are alike; each unhappy family is unhappy in its own way.", author: "Leo Tolstoy", source: "Anna Karenina, 1878", cat: "Literature" },
+  { text: "The most courageous act is still to think for yourself. Aloud.", author: "Coco Chanel", source: "", cat: "Literature" },
+  { text: "Not all those who wander are lost.", author: "J.R.R. Tolkien", source: "The Fellowship of the Ring, 1954", cat: "Literature" },
+  { text: "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.", author: "Jane Austen", source: "Pride and Prejudice, 1813", cat: "Literature" },
+  { text: "We accept the love we think we deserve.", author: "Stephen Chbosky", source: "The Perks of Being a Wallflower, 1999", cat: "Literature" },
+  { text: "There is nothing either good or bad, but thinking makes it so.", author: "William Shakespeare", source: "Hamlet, Act II, Scene 2", cat: "Literature" },
+  { text: "I took a deep breath and listened to the old brag of my heart: I am, I am, I am.", author: "Sylvia Plath", source: "The Bell Jar, 1963", cat: "Literature" },
+  { text: "One must always be careful of books, and what is inside them, for words have the power to change us.", author: "Cassandra Clare", source: "City of Bones, 2007", cat: "Literature" },
+  { text: "I am not afraid of storms, for I am learning how to sail my ship.", author: "Louisa May Alcott", source: "Little Women, 1868", cat: "Literature" },
+  { text: "The sky is everywhere, it begins at your feet.", author: "Jandy Nelson", source: "The Sky Is Everywhere, 2010", cat: "Literature" },
+  { text: "So we beat on, boats against the current, borne back ceaselessly into the past.", author: "F. Scott Fitzgerald", source: "The Great Gatsby, 1925", cat: "Literature" },
+  { text: "If you want to know what a man's like, take a good look at how he treats his inferiors, not his equals.", author: "J.K. Rowling", source: "Harry Potter and the Goblet of Fire, 2000", cat: "Literature" },
+  { text: "The world is a book, and those who do not travel read only one page.", author: "Saint Augustine", source: "Confessions, c. 400 AD", cat: "Literature" },
+
+  // Economics
+  { text: "The curious task of economics is to demonstrate to men how little they really know about what they imagine they can design.", author: "F.A. Hayek", source: "The Fatal Conceit, 1988", cat: "Economics" },
+  { text: "In the long run, we are all dead.", author: "John Maynard Keynes", source: "A Tract on Monetary Reform, 1923", cat: "Economics" },
+  { text: "There is no such thing as a free lunch.", author: "Milton Friedman", source: "There's No Such Thing as a Free Lunch, 1975", cat: "Economics" },
+  { text: "The ideas of economists and political philosophers, both when they are right and when they are wrong, are more powerful than is commonly understood.", author: "John Maynard Keynes", source: "The General Theory, 1936", cat: "Economics" },
+  { text: "It is not from the benevolence of the butcher, the brewer, or the baker that we expect our dinner, but from their regard to their own interest.", author: "Adam Smith", source: "The Wealth of Nations, 1776", cat: "Economics" },
+  { text: "The market is not an invention of capitalism. It has existed for centuries. It is an invention of civilization.", author: "Mikhail Gorbachev", source: "Speech, 1990", cat: "Economics" },
+  { text: "Compound interest is the eighth wonder of the world.", author: "Albert Einstein", source: "attr., c. 1920s", cat: "Economics" },
+  { text: "The art of economics consists in looking not merely at the immediate but at the longer effects of any act or policy.", author: "Henry Hazlitt", source: "Economics in One Lesson, 1946", cat: "Economics" },
+  { text: "Risk comes from not knowing what you're doing.", author: "Warren Buffett", source: "Annual Letter, 1993", cat: "Economics" },
+  { text: "The capitalist achievement does not typically consist in providing more silk stockings for queens but in bringing them within the reach of factory girls.", author: "Joseph Schumpeter", source: "Capitalism, Socialism and Democracy, 1942", cat: "Economics" },
+  { text: "Every act of creation is first of all an act of destruction.", author: "Joseph Schumpeter", source: "Capitalism, Socialism and Democracy, 1942", cat: "Economics" },
+
+  // Poetry
+  { text: "I took the one less traveled by, and that has made all the difference.", author: "Robert Frost", source: "The Road Not Taken, 1916", cat: "Poetry" },
+  { text: "Do I dare disturb the universe?", author: "T.S. Eliot", source: "The Love Song of J. Alfred Prufrock, 1915", cat: "Poetry" },
+  { text: "In the middle of the journey of our life I came to myself within a dark wood where the straight way was lost.", author: "Dante Alighieri", source: "Inferno, Canto I, c. 1320", cat: "Poetry" },
+  { text: "Beauty is truth, truth beauty — that is all ye know on earth, and all ye need to know.", author: "John Keats", source: "Ode on a Grecian Urn, 1819", cat: "Poetry" },
+  { text: "Do not go gentle into that good night. Rage, rage against the dying of the light.", author: "Dylan Thomas", source: "Do Not Go Gentle Into That Good Night, 1947", cat: "Poetry" },
+  { text: "I am large, I contain multitudes.", author: "Walt Whitman", source: "Song of Myself, 1855", cat: "Poetry" },
+  { text: "The force that through the green fuse drives the flower drives my green age.", author: "Dylan Thomas", source: "The Force That Through the Green Fuse, 1934", cat: "Poetry" },
+  { text: "Two roads diverged in a yellow wood, and sorry I could not travel both.", author: "Robert Frost", source: "The Road Not Taken, 1916", cat: "Poetry" },
+  { text: "We shall not cease from exploration, and the end of all our exploring will be to arrive where we started.", author: "T.S. Eliot", source: "Little Gidding, 1942", cat: "Poetry" },
+  { text: "Tell me, what is it you plan to do with your one wild and precious life?", author: "Mary Oliver", source: "The Summer Day, 1990", cat: "Poetry" },
+  { text: "You do not have to be good. You do not have to walk on your knees for a hundred miles through the desert repenting.", author: "Mary Oliver", source: "Wild Geese, 1986", cat: "Poetry" },
+  { text: "Hope is the thing with feathers that perches in the soul.", author: "Emily Dickinson", source: "Poem 254, c. 1861", cat: "Poetry" },
+  { text: "Because I could not stop for Death — He kindly stopped for me.", author: "Emily Dickinson", source: "Poem 712, c. 1863", cat: "Poetry" },
+
+  // Science & Mathematics
+  { text: "Imagination is more important than knowledge. Knowledge is limited. Imagination encircles the world.", author: "Albert Einstein", source: "Interview, 1929", cat: "Science" },
+  { text: "The most beautiful thing we can experience is the mysterious. It is the source of all true art and science.", author: "Albert Einstein", source: "What I Believe, 1930", cat: "Science" },
+  { text: "If I have seen further, it is by standing on the shoulders of giants.", author: "Isaac Newton", source: "Letter to Robert Hooke, 1675", cat: "Science" },
+  { text: "The universe is under no obligation to make sense to you.", author: "Neil deGrasse Tyson", source: "Twitter, 2013", cat: "Science" },
+  { text: "Mathematics is the language with which God wrote the universe.", author: "Galileo Galilei", source: "attr., c. 1623", cat: "Science" },
+  { text: "Not everything that can be counted counts, and not everything that counts can be counted.", author: "William Bruce Cameron", source: "Informal Sociology, 1963", cat: "Science" },
+
+  // History & Politics
+  { text: "Those who cannot remember the past are condemned to repeat it.", author: "George Santayana", source: "The Life of Reason, 1905", cat: "History" },
+  { text: "The arc of the moral universe is long, but it bends toward justice.", author: "Martin Luther King Jr.", source: "Speech, 1965", cat: "History" },
+  { text: "Power tends to corrupt, and absolute power corrupts absolutely.", author: "Lord Acton", source: "Letter to Bishop Creighton, 1887", cat: "History" },
+  { text: "The most common way people give up their power is by thinking they don't have any.", author: "Alice Walker", source: "attr.", cat: "History" },
+  { text: "History is written by the victors.", author: "Winston Churchill", source: "attr.", cat: "History" },
+  { text: "A people that elect corrupt politicians, imposters, thieves and traitors are not victims, but accomplices.", author: "George Orwell", source: "attr.", cat: "History" },
+
+  // Art & Aesthetics
+  { text: "Art is not what you see, but what you make others see.", author: "Edgar Degas", source: "attr.", cat: "Art" },
+  { text: "Every artist dips his brush in his own soul, and paints his own nature into his pictures.", author: "Henry Ward Beecher", source: "Proverbs from Plymouth Pulpit, 1887", cat: "Art" },
+  { text: "The purpose of art is washing the dust of daily life off our souls.", author: "Pablo Picasso", source: "attr.", cat: "Art" },
+  { text: "Have no fear of perfection — you'll never reach it.", author: "Salvador Dalí", source: "attr.", cat: "Art" },
+  { text: "An artist is not paid for his labor but for his vision.", author: "James Whistler", source: "attr.", cat: "Art" },
+  { text: "Art enables us to find ourselves and lose ourselves at the same time.", author: "Thomas Merton", source: "No Man Is an Island, 1955", cat: "Art" },
+];
+
+// Unsplash collections: landscape, nature, architecture, abstract, moody
+const IMAGE_QUERIES = [
+  "nature,fog",
+  "forest,mist",
+  "mountains,dramatic",
+  "ocean,storm",
+  "desert,light",
+  "ancient,ruins",
+  "library,dark",
+  "winter,landscape",
+  "rain,city",
+  "architecture,gothic",
+  "cosmos,nebula",
+  "cave,light",
+  "autumn,trees",
+  "volcanic,landscape",
+  "glacier,ice",
+];
+
+const W = Math.ceil(window.innerWidth * window.devicePixelRatio);
+const H = Math.ceil(window.innerHeight * window.devicePixelRatio);
+
+function imgUrl(query) {
+  // Unsplash Source API — free, no key required
+  return `https://source.unsplash.com/${W}x${H}/?${encodeURIComponent(query)}&sig=${Math.random()}`;
+}
+
+// ── State ──
+const bgA = document.getElementById('bg-a');
+const bgB = document.getElementById('bg-b');
+const card = document.getElementById('card');
+const qText = document.getElementById('quote-text');
+const qAttr = document.getElementById('quote-attr');
+const qSrc = document.getElementById('quote-source');
+const catPill = document.getElementById('cat-pill');
+
+let activeBg = 'a';
+let usedIndices = [];
+let currentIdx = -1;
+
+function pick() {
+  if (usedIndices.length >= QUOTES.length) usedIndices = [];
+  let idx;
+  do { idx = Math.floor(Math.random() * QUOTES.length); }
+  while (usedIndices.includes(idx));
+  usedIndices.push(idx);
+  return idx;
+}
+
+function setQuote(q) {
+  qText.textContent = '“' + q.text + '”';
+  qAttr.textContent = q.author;
+  qSrc.textContent = q.source || '';
+  catPill.textContent = q.cat;
+}
+
+function loadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => resolve(url); // use it anyway
+    img.src = url;
+  });
+}
+
+async function next(initial = false) {
+  const idx = pick();
+  const q = QUOTES[idx];
+  const query = IMAGE_QUERIES[Math.floor(Math.random() * IMAGE_QUERIES.length)];
+  const url = imgUrl(query);
+
+  if (!initial) {
+    // Fade out card
+    card.classList.add('hidden');
+    await sleep(600);
+  }
+
+  // Start loading image
+  const imgPromise = loadImage(url);
+
+  // Switch bg layer
+  const nextBg = activeBg === 'a' ? bgB : bgA;
+  const prevBg = activeBg === 'a' ? bgA : bgB;
+
+  const resolvedUrl = await imgPromise;
+  nextBg.style.backgroundImage = `url(${resolvedUrl})`;
+  nextBg.classList.remove('exiting');
+  nextBg.classList.add('visible');
+  prevBg.classList.add('exiting');
+
+  setTimeout(() => {
+    prevBg.classList.remove('visible', 'exiting');
+    prevBg.style.backgroundImage = '';
+  }, 2200);
+
+  activeBg = activeBg === 'a' ? 'b' : 'a';
+
+  // Set quote
+  setQuote(q);
+
+  // Fade in card
+  card.classList.remove('hidden');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Cursor ──
+const cur = document.getElementById('cur');
+const curRing = document.getElementById('cur-ring');
+let mx = 0, my = 0, rx = 0, ry = 0;
+
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  cur.style.left = mx + 'px';
+  cur.style.top = my + 'px';
+});
+
+function animRing() {
+  rx += (mx - rx) * 0.14;
+  ry += (my - ry) * 0.14;
+  curRing.style.left = rx + 'px';
+  curRing.style.top = ry + 'px';
+  requestAnimationFrame(animRing);
+}
+animRing();
+
+document.getElementById('btn-next').addEventListener('click', () => next());
+
+// ── Keyboard ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') next();
+});
+
+// ── Init ──
+next(true);
+</script>
+</body>
+</html>

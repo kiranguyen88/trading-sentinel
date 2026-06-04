@@ -740,10 +740,10 @@ Quick starts:
   async function triggerSuggestWatchlist() {
     const btn = document.getElementById('suggest-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Scanning 60+ stocks...';
+    btn.textContent = '⏳ Scanning 200+ stocks...';
 
     // Show scanning message in chat
-    const scanMsg = appendMessage('assistant', '🔍 Scanning 60+ US stocks across all sectors...\nChecking RSI, MACD, Bollinger Bands, volume, and news for each.\nThis takes about 20–30 seconds.');
+    const scanMsg = appendMessage('assistant', '🔍 Scanning 200+ US stocks across 13 sectors...\nChecking RSI, MACD, Bollinger Bands, volume, and news for each.\nThis takes about 30–60 seconds.');
 
     try {
       const res  = await fetch('/suggest-watchlist', { method: 'POST' });
