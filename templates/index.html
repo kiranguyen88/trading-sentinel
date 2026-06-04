@@ -602,6 +602,7 @@ Quick starts:
   let _chartAlloc = null, _chartPnl = null, _chartDay = null;
 
   function renderCharts(holdings) {
+    if (!document.getElementById('chart-alloc')) return;
     const valid = (holdings || []).filter(h => !h.error && h.current_price);
     if (!valid.length) return;
 

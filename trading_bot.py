@@ -531,8 +531,7 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
             contents=full_contents,
-            config={"temperature": 0.3},
-            tools=GEMINI_TOOLS,
+            config={"temperature": 0.3, "tools": GEMINI_TOOLS},
         )
 
         # Check if model wants to call tools
