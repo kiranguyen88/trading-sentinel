@@ -9,7 +9,7 @@ An AI-powered US stock portfolio monitor with real-time technical analysis, Gemi
 - **Live Dashboard** — Portfolio and watchlist with real-time prices, RSI, MACD, Bollinger Bands, P&L
 - **AI Chat** — Ask anything about your portfolio using Google Gemini 2.5 Flash
 - **WhatsApp Alerts** — Automatic alerts for RSI extremes, MACD crossovers, price drops/surges, volume spikes
-- **Auto Screener** — Scans 200+ US stocks across 13 sectors, AI picks the best 5–6 mid-term setups daily
+- **Auto Screener** — Scans 400+ US stocks across 20 sectors, AI picks the best 5–6 mid-term setups daily
 - **Scheduled Jobs** — Daily digest, warning monitor every 15 min, after-close summary
 - **Charts** — Portfolio allocation donut, P&L bar chart, day change chart
 - **Mobile Responsive** — Bottom tab navigation for phone use
@@ -153,9 +153,34 @@ Each alert fires once per ticker per type per day.
 
 ---
 
-## Stock Universe (200+ tickers)
+## Stock Universe (400+ tickers)
 
-Covers 13 sectors: Tech, AI/Semis, Finance, Healthcare, Energy, Consumer/Retail, Food/Bev, Defense/Aero, Industrial, Real Estate/REIT, Utilities, Materials, ETFs.
+Covers 20 sectors:
+
+| Sector | Examples |
+|---|---|
+| Tech MegaCap | NVDA, MSFT, AAPL, META, GOOGL, AMZN |
+| Tech Growth | PLTR, SNOW, CRWD, DDOG, NET, SHOP |
+| Tech Infrastructure | CSCO, ANET, PSTG, SPLK, DT |
+| AI / Semis | ARM, AMAT, MU, QCOM, MRVL, ASML |
+| Finance Banks | JPM, GS, BAC, MS, C, WFC |
+| Finance Markets | V, MA, COIN, PYPL, BLK, CME |
+| Finance Insurance | AFL, PRU, PGR, TRV, CB |
+| Healthcare Pharma | LLY, ABBV, MRNA, VRTX, REGN |
+| Healthcare Devices | ISRG, DXCM, TMO, SYK, MDT |
+| Healthcare Services | UNH, CVS, HUM, CI, HCA |
+| Energy Oil | XOM, CVX, COP, OXY, HAL, SLB |
+| Energy Gas | LNG, EQT, AR, WMB, KMI |
+| Energy Clean | ENPH, FSLR, NEE, PLUG, CHPT |
+| Consumer Discretionary | TSLA, NKE, COST, LULU, CROX |
+| Consumer Auto / EV | RIVN, LCID, NIO, LI, XPEV |
+| Food & Bev | MCD, CMG, SBUX, KO, PEP, MNST |
+| Defense / Aero | LMT, RTX, NOC, BA, AXON |
+| Industrial | CAT, DE, HON, ROK, ODFL |
+| Real Estate / REIT | AMT, EQIX, PLD, SPG, PSA |
+| Utilities | NEE, DUK, VST, CEG, NRG |
+| Materials | LIN, FCX, NEM, ALB, MP |
+| ETFs | QQQ, SPY, SOXX, ARKK, GLD |
 
 ---
 
