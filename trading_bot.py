@@ -509,7 +509,7 @@ def chat_stream(user_message: str, history: list[dict]):
 
 
 def _chat_stream_inner(user_message: str, history: list[dict]):
-    """Inner logic — uses google-genai SDK for generateContent."""
+    """Inner logic — uses google-genai SDK with tool use loop for live data."""
     system = build_system_prompt()
 
     # Build contents array
@@ -525,15 +525,55 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
         {"role": "model", "parts": [{"text": "Understood. I am Trading Sentinel, ready to assist with your portfolio."}]},
     ] + contents
 
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=full_contents,
-        config={"temperature": 0.3},
-    )
+    # Tool-use loop — keep calling until no more tool calls
+    MAX_ROUNDS = 5
+    for _ in range(MAX_ROUNDS):
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=full_contents,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                tools=GEMINI_TOOLS,
+            ),
+        )
 
-    full_text = response.text or ""
+        # Check if model wants to call tools
+        candidate = response.candidates[0] if response.candidates else None
+        if not candidate:
+            break
 
-    # Stream the text in chunks so the frontend renders progressively
+        tool_calls = [p for p in candidate.content.parts if hasattr(p, "function_call") and p.function_call]
+        if not tool_calls:
+            # No tool calls — final text response
+            break
+
+        # Execute each tool call and feed results back
+        full_contents.append({"role": "model", "parts": [
+            {"function_call": {"name": p.function_call.name, "args": dict(p.function_call.args)}}
+            for p in tool_calls
+        ]})
+
+        tool_results = []
+        for p in tool_calls:
+            fc   = p.function_call
+            name = fc.name
+            args = dict(fc.args)
+            result = _run_tool(name, args)
+            tool_results.append({"function_response": {"name": name, "response": {"result": result}}})
+
+        full_contents.append({"role": "user", "parts": tool_results})
+
+    # Extract final text
+    full_text = ""
+    if response.candidates:
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, "text") and part.text:
+                full_text += part.text
+
+    if not full_text:
+        full_text = "Sorry, I could not generate a response. Please try again."
+
+    # Stream in chunks
     chunk_size = 80
     for i in range(0, len(full_text), chunk_size):
         yield f"data: {json.dumps({'type': 'text', 'text': full_text[i:i+chunk_size]})}\n\n"
