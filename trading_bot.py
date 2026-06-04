@@ -302,6 +302,57 @@ GEMINI_TOOLS = [
 # System prompt
 # ---------------------------------------------------------------------------
 
+def get_market_breadth() -> dict:
+    """Get market breadth: SPY/QQQ/IWM vs MAs, VIX, HYG, regime score."""
+    symbols = {
+        "SPY": "S&P 500", "QQQ": "Nasdaq 100", "IWM": "Small Caps",
+        "^VIX": "VIX Fear Index", "HYG": "HY Bonds", "TLT": "Long Bonds",
+    }
+    result = {}
+    for sym, name in symbols.items():
+        try:
+            hist = yf.Ticker(sym).history(period="1y")
+            if hist.empty:
+                continue
+            close  = hist["Close"]
+            price  = float(close.iloc[-1])
+            ma50   = float(close.rolling(50).mean().iloc[-1])  if len(close) >= 50  else None
+            ma200  = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+            chg1d  = float((close.iloc[-1] - close.iloc[-2])  / close.iloc[-2]  * 100)
+            chg1m  = float((close.iloc[-1] - close.iloc[-22]) / close.iloc[-22] * 100) if len(close) >= 22 else None
+            result[sym] = {
+                "name": name, "price": round(price, 2),
+                "day_change_pct":  round(chg1d, 2),
+                "change_1m_pct":   round(chg1m, 2) if chg1m else None,
+                "above_ma50":      bool(price > ma50)  if ma50  else None,
+                "above_ma200":     bool(price > ma200) if ma200 else None,
+                "ma50":  round(ma50,  2) if ma50  else None,
+                "ma200": round(ma200, 2) if ma200 else None,
+            }
+        except Exception:
+            pass
+
+    # Regime score
+    score, checks = 0, 0
+    for sym in ("SPY", "QQQ", "IWM"):
+        if sym in result:
+            if result[sym].get("above_ma200"): score += 2
+            if result[sym].get("above_ma50"):  score += 1
+            checks += 3
+
+    vix = result.get("^VIX", {}).get("price", 20)
+    if   vix < 15: score += 2; vix_label = "Very Low Fear"
+    elif vix < 20: score += 1; vix_label = "Low Fear"
+    elif vix < 25:              vix_label = "Moderate Fear"
+    elif vix < 30: score -= 1; vix_label = "High Fear"
+    else:          score -= 2; vix_label = "Extreme Fear"
+
+    pct = max(0, min(100, int(score / (checks + 2) * 100))) if (checks + 2) > 0 else 50
+    regime = "BULL" if pct >= 70 else "BEAR" if pct < 40 else "NEUTRAL"
+    result["_regime"] = {"regime": regime, "score": pct, "vix": round(vix, 2), "vix_label": vix_label}
+    return result
+
+
 def build_system_prompt() -> str:
     portfolio = load_portfolio()
     today     = datetime.now(_GMT7).strftime("%A, %B %d, %Y %H:%M GMT+7")
@@ -323,30 +374,94 @@ TODAY: {today}
 {watchlist_txt}
 
 ## YOUR ROLE
-1. **Technical Analysis** — RSI, MACD, Bollinger Bands, MAs, volume. Identify momentum, crossovers, breakouts.
-2. **News & Sentiment** — Always include recent news when analyzing any ticker. Flag earnings dates, analyst upgrades/downgrades, product launches, macro events (Fed, CPI, jobs) that could move the stock.
-3. **Watchlist Opportunities** — For watchlist tickers, give a BUY SETUP analysis: is there a good entry point? What price level to enter? What's the catalyst? What's the risk/reward?
-4. **Warnings** — Alert immediately for holdings: RSI extremes, MACD crossovers, sharp price drops, Bollinger extremes.
-5. **WhatsApp Alerts** — Send automatically when urgent conditions are detected.
+1. **Technical Analysis** — RSI, MACD, Bollinger Bands, MAs, volume. Identify momentum, crossovers, breakouts, VCP patterns.
+2. **News & Sentiment** — Always include recent news. Flag earnings dates, analyst upgrades/downgrades, macro events (Fed, CPI, jobs).
+3. **Market Regime Awareness** — Before recommending trades, consider whether the broader market is in BULL/NEUTRAL/BEAR regime. In BEAR regime, reduce position sizes and tighten stops.
+4. **Position Sizing** — Always recommend position size using 1-2% account risk rule: Risk Amount = Account × Risk% / (Entry − Stop). Never risk more than 2% per trade.
+5. **Watchlist Opportunities** — Give BUY SETUP analysis with specific entry, stop, target, and position size.
+6. **Warnings** — Alert immediately for: RSI extremes, MACD crossovers, sharp drops, Bollinger band extremes, volume spikes.
+7. **Trade Journal Awareness** — If user mentions past trades, analyze patterns and suggest improvements.
+
+## TECHNICAL FRAMEWORKS
+
+### VCP (Volatility Contraction Pattern)
+Look for: Price making higher lows → contracting range → volume drying up → breakout on volume.
+Entry: Breakout above pivot point. Stop: Below last low in base.
+
+### MACD Crossover System
+- Bullish: MACD crosses above signal line + histogram turns positive → Buy signal
+- Bearish: MACD crosses below signal line → Sell/reduce signal
+- Confirm with RSI: RSI 45-65 on bullish cross = strong setup
+
+### Bollinger Band Mean Reversion
+- Price touching lower band + RSI < 35 = oversold bounce setup
+- Price touching upper band + RSI > 70 = overbought, reduce exposure
+- BB squeeze (bands narrowing) = volatility expansion incoming
+
+### Market Regime Rules
+- BULL (SPY/QQQ/IWM above MA200, VIX < 20): Full position sizes, hold winners
+- NEUTRAL (mixed signals): Reduce to 50-75% size, be selective
+- BEAR (below MA200, VIX > 25): 25-50% size max, tighter stops, more cash
 
 ## REPORT FORMAT
-For every ticker report, always include ALL of these sections:
+For every ticker, always include:
 
-**[TICKER] — $price (day change%)**
-- **Trend:** (bullish/bearish/neutral based on MAs and MACD)
-- **Momentum:** RSI=X — interpretation
-- **Key Levels:** support at $X, resistance at $X (use Bollinger Bands + MAs)
-- **News:** bullet points of 2-3 most relevant recent headlines + brief impact assessment
-- **Verdict:** BUY / HOLD / REDUCE / WATCH — with specific reasoning and time horizon
-- **Entry/Stop:** suggested entry price range, stop-loss level, target price (for BUY/WATCH)
+### [TICKER] — $price (day change%)
+- **Trend:** bullish/bearish/neutral (MAs + MACD)
+- **Momentum:** RSI=X — overbought/oversold/neutral
+- **Pattern:** any VCP, cup-and-handle, breakout, or reversal pattern
+- **Key Levels:** Support $X | Resistance $X | Pivot $X
+- **News:** 2-3 most relevant headlines + market impact
+- **Verdict:** BUY / HOLD / REDUCE / WATCH
+- **Trade Plan:** Entry $X–$X | Stop $X | Target $X | R:R = X:1
+- **Position Size:** e.g. "Risk 1% of $50k account = $500 risk → X shares"
 
 ## TRADING STYLE
 - Mid-term horizon: 1 week to 3 months
-- Focus on swing trades, momentum, sector rotation, macro catalysts
-- Risk-conscious: always include stop-loss levels
+- Swing trades, momentum, sector rotation, macro catalysts
+- Risk-first: define max loss before every trade
+- Never average down into a losing position without re-evaluating thesis
+
+## POSITION SIZING FORMULA
+shares = (account_size × risk_pct / 100) / (entry_price − stop_loss)
+Default risk per trade: 1% of account. Max: 2%.
 
 Respond in the same language the user writes in (English or Vietnamese).
 Always use tools for live data — never guess prices or news from memory."""
+
+
+# ---------------------------------------------------------------------------
+# Trade Journal
+# ---------------------------------------------------------------------------
+
+JOURNAL_FILE = "journal.json"
+
+def load_journal() -> list:
+    if not os.path.exists(JOURNAL_FILE):
+        return []
+    with open(JOURNAL_FILE) as f:
+        return json.load(f)
+
+def save_journal(entries: list):
+    with open(JOURNAL_FILE, "w") as f:
+        json.dump(entries, f, indent=2)
+
+def add_journal_entry(entry: dict) -> dict:
+    entries = load_journal()
+    entry["id"]   = f"trade_{len(entries)+1}_{datetime.now(_GMT7).strftime('%Y%m%d%H%M%S')}"
+    entry["date"] = entry.get("date") or datetime.now(_GMT7).strftime("%Y-%m-%d")
+    entry["created_at"] = datetime.now(_GMT7).isoformat()
+    entries.append(entry)
+    save_journal(entries)
+    return entry
+
+def delete_journal_entry(entry_id: str) -> bool:
+    entries = load_journal()
+    new = [e for e in entries if e.get("id") != entry_id]
+    if len(new) == len(entries):
+        return False
+    save_journal(new)
+    return True
 
 
 # ---------------------------------------------------------------------------

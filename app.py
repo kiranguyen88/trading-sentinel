@@ -8,7 +8,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
-    run_daily_digest, load_portfolio, send_whatsapp, get_stock_data, get_market_news
+    run_daily_digest, load_portfolio, send_whatsapp, get_stock_data, get_market_news,
+    get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
 )
 from screener import ai_suggest_watchlist
 
@@ -255,6 +256,71 @@ def chat():
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------------------
+# Market Breadth
+# ---------------------------------------------------------------------------
+
+@app.route("/market-breadth")
+def market_breadth():
+    return jsonify(get_market_breadth())
+
+
+# ---------------------------------------------------------------------------
+# Position Sizer
+# ---------------------------------------------------------------------------
+
+@app.route("/position-size", methods=["POST"])
+def position_size():
+    d       = request.json or {}
+    entry   = float(d.get("entry",   0))
+    stop    = float(d.get("stop",    0))
+    target  = float(d.get("target",  0))
+    account = float(d.get("account", 10000))
+    risk_pct = float(d.get("risk_pct", 1.0))
+
+    if entry <= 0 or stop <= 0 or entry == stop:
+        return jsonify({"error": "Invalid entry or stop price"}), 400
+
+    risk_per_share = abs(entry - stop)
+    risk_amount    = account * risk_pct / 100
+    shares         = max(1, int(risk_amount / risk_per_share))
+    position_value = round(shares * entry, 2)
+
+    result = {
+        "shares":          shares,
+        "position_value":  position_value,
+        "risk_amount":     round(risk_amount, 2),
+        "risk_per_share":  round(risk_per_share, 2),
+        "position_pct":    round(position_value / account * 100, 1),
+    }
+    if target > 0 and target != entry:
+        reward = abs(target - entry)
+        result["risk_reward"]      = round(reward / risk_per_share, 2)
+        result["potential_profit"] = round(reward * shares, 2)
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Trade Journal
+# ---------------------------------------------------------------------------
+
+@app.route("/journal")
+def journal():
+    return jsonify(load_journal())
+
+@app.route("/journal/add", methods=["POST"])
+def journal_add():
+    entry = request.json or {}
+    if not entry.get("ticker"):
+        return jsonify({"error": "ticker required"}), 400
+    return jsonify(add_journal_entry(entry))
+
+@app.route("/journal/delete/<entry_id>", methods=["DELETE"])
+def journal_delete(entry_id):
+    ok = delete_journal_entry(entry_id)
+    return jsonify({"ok": ok})
 
 
 if __name__ == "__main__":
