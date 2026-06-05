@@ -64,14 +64,54 @@
       letter-spacing: 1px; text-transform: uppercase; flex-shrink: 0;
     }
     .holding-card {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 7px 10px; margin-bottom: 5px; cursor: pointer; transition: border-color .2s;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 11px 8px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: background .15s, transform .15s;
+      position: relative;
     }
-    .holding-card:hover { border-color: var(--accent); }
+    .holding-card.card-profit {
+      border-left-color: var(--green);
+      background: linear-gradient(to right, rgba(63,185,80,0.05) 0%, var(--bg) 55%);
+    }
+    .holding-card.card-loss {
+      border-left-color: var(--red);
+      background: linear-gradient(to right, rgba(248,81,73,0.05) 0%, var(--bg) 55%);
+    }
+    .holding-card:hover { background: rgba(48,54,61,0.6); transform: translateX(2px); }
+    .holding-card.card-profit:hover { background: linear-gradient(to right, rgba(63,185,80,0.09) 0%, rgba(48,54,61,0.4) 55%); }
+    .holding-card.card-loss:hover   { background: linear-gradient(to right, rgba(248,81,73,0.09) 0%, rgba(48,54,61,0.4) 55%); }
+
+    .card-row1 { display: flex; justify-content: space-between; align-items: baseline; }
+    .card-ticker { font-weight: 800; font-size: 0.9rem; color: var(--accent); letter-spacing: 0.03em; }
+    .card-shares { font-weight: 400; font-size: 0.66rem; color: var(--muted); margin-left: 4px; }
+    .card-price  { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+
+    .card-row2 { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .card-avg  { font-size: 0.67rem; color: var(--muted); }
+    .card-day  { font-size: 0.69rem; font-weight: 600; }
+
+    .card-row3 { margin-top: 7px; }
+    .card-bar-track {
+      height: 2px; background: var(--border); border-radius: 2px;
+      position: relative; overflow: hidden;
+    }
+    .card-bar-fill {
+      position: absolute; top: 0; height: 100%; border-radius: 2px;
+    }
+    .card-pnl-label {
+      display: flex; justify-content: flex-end; margin-top: 3px;
+      font-size: 0.7rem; font-weight: 700;
+    }
+
+    /* legacy error fallback */
     .holding-top { display: flex; justify-content: space-between; align-items: center; }
     .ticker-name { font-weight: 700; font-size: 0.92rem; color: var(--accent); }
     .price { font-size: 0.88rem; font-weight: 600; }
-    /* .holding-mid and .pnl-row kept for error fallback */
     .holding-mid { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.72rem; color: var(--muted); }
     .pnl-row { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.75rem; font-weight: 600; }
     /* watchlist compact rows */
@@ -576,17 +616,29 @@ Quick starts:
         ? `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${h.day_change_pct.toFixed(2)}%)`
         : '--';
 
-      return `<div class="holding-card" onclick="sendQuick('Analyze ${h.ticker} in detail')">
-        <div class="holding-top">
-          <span class="ticker-name">${h.ticker}<span style="font-weight:400;font-size:.7rem;color:var(--muted);margin-left:5px">${h.quantity}sh</span></span>
-          <span style="display:flex;align-items:center;gap:7px">
-            <span class="${dayClass}" style="font-size:.72rem">${dayStr}</span>
-            <span class="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-          </span>
+      const isProfitable = (h.pnl_pct || 0) >= 0;
+      const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
+      const barWidth    = Math.min(Math.abs(h.pnl_pct || 0), 100);
+      const barColor    = isProfitable ? 'var(--green)' : 'var(--red)';
+      const barSide     = isProfitable ? 'left:0' : 'right:0';
+      const pnlSign     = (h.pnl_pct || 0) > 0 ? '+' : '';
+
+      return `<div class="holding-card ${cardClass}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
+        <div class="card-row1">
+          <span class="card-ticker">${h.ticker}<span class="card-shares">${h.quantity}sh</span></span>
+          <span class="card-price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
-          <span style="color:var(--muted);font-size:.7rem">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-          <span class="${pnlClass}" style="font-size:.74rem;font-weight:600">${h.unrealized_pnl > 0 ? '+' : ''}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${h.pnl_pct > 0 ? '+' : ''}${h.pnl_pct?.toFixed(1)}%)</span>
+        <div class="card-row2">
+          <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span class="card-day ${dayClass}">${dayStr}</span>
+        </div>
+        <div class="card-row3">
+          <div class="card-bar-track">
+            <div class="card-bar-fill" style="width:${barWidth}%;${barSide};background:${barColor}"></div>
+          </div>
+          <div class="card-pnl-label">
+            <span class="${pnlClass}">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
+          </div>
         </div>
       </div>`;
     }).join('');
