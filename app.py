@@ -11,7 +11,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
-    run_daily_digest, load_portfolio, send_whatsapp, get_stock_data, get_market_news,
+    run_daily_digest, load_portfolio, save_portfolio, send_whatsapp, get_stock_data, get_market_news,
     get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
 )
 from screener import ai_suggest_watchlist
@@ -290,8 +290,7 @@ def portfolio_update():
     portfolio["watchlist"]        = data.get("watchlist", portfolio.get("watchlist", []))
     portfolio["whatsapp_number"]  = data.get("whatsapp_number", portfolio.get("whatsapp_number", ""))
     portfolio["whatsapp_numbers"] = data.get("whatsapp_numbers", portfolio.get("whatsapp_numbers", []))
-    with open("portfolio.json", "w") as f:
-        json.dump(portfolio, f, indent=2)
+    save_portfolio(portfolio)
     return jsonify({"ok": True})
 
 

@@ -48,9 +48,22 @@ TWILIO_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
 # Portfolio helpers
 # ---------------------------------------------------------------------------
 
+# Persist to DATA_DIR if set (Railway persistent volume), else local file.
+_PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", "."), "portfolio.json")
+
 def load_portfolio() -> dict:
-    with open("portfolio.json") as f:
+    path = _PORTFOLIO_PATH
+    if not os.path.exists(path):
+        path = "portfolio.json"   # fall back to bundled defaults
+    with open(path) as f:
         return json.load(f)
+
+def save_portfolio(data: dict) -> None:
+    dir_ = os.path.dirname(_PORTFOLIO_PATH)
+    if dir_:
+        os.makedirs(dir_, exist_ok=True)
+    with open(_PORTFOLIO_PATH, "w") as f:
+        json.dump(data, f, indent=2)
 
 def get_whatsapp_numbers() -> list[str]:
     p = load_portfolio()
@@ -70,6 +83,7 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
     try:
         tk = yf.Ticker(ticker)
         hist = tk.history(period=period)
+        hist = hist.dropna(subset=["Close"])   # drop incomplete trailing row (market closed)
         if hist.empty:
             return {"error": f"No data for {ticker}"}
 

@@ -911,17 +911,21 @@ Quick starts:
       if (s.error) return `<div class="holding-card"><span class="ticker-name">${s.ticker||'?'}</span> <span style="color:var(--red);font-size:.7rem">${s.error}</span></div>`;
       const dayClass = s.day_change_pct > 0 ? 'up' : s.day_change_pct < 0 ? 'down' : 'neutral';
       const rsi = s.rsi_14;
-      const rsiBadge = rsi > 75 ? `<span class="badge bear">RSI ${rsi} OB</span>`
-                     : rsi < 35 ? `<span class="badge bull">RSI ${rsi} low</span>`
-                     : `<span class="badge">RSI ${rsi}</span>`;
+      const rsiBadge = rsi == null ? ''
+                     : rsi > 75   ? `<span class="badge bear">RSI ${rsi} OB</span>`
+                     : rsi < 35   ? `<span class="badge bull">RSI ${rsi} low</span>`
+                     :              `<span class="badge">RSI ${rsi}</span>`;
       const macdData = s.macd || {};
       const macdBadge = macdData.bullish_crossover ? `<span class="badge bull">MACD ↑</span>`
                       : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
                       : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
-                      : `<span class="badge bear">MACD-</span>`;
-      const dollarChg = s.current_price * s.day_change_pct / (100 + s.day_change_pct);
-      const sign = s.day_change_pct > 0 ? '+' : '';
-      const chgTxt = `${sign}$${Math.abs(dollarChg).toFixed(2)} (${sign}${s.day_change_pct?.toFixed(2)}%)`;
+                      : macdData.histogram < 0      ? `<span class="badge bear">MACD-</span>`
+                      : '';
+      const dollarChg = (s.current_price || 0) * (s.day_change_pct || 0) / (100 + (s.day_change_pct || 0));
+      const sign = (s.day_change_pct || 0) > 0 ? '+' : '';
+      const chgTxt = s.day_change_pct != null
+        ? `${sign}$${Math.abs(dollarChg).toFixed(2)} (${sign}${s.day_change_pct.toFixed(2)}%)`
+        : '--';
       const meta = [
         s.entry_target ? `Entry $${s.entry_target}` : '',
         s.stop_target  ? `Stop $${s.stop_target}`   : '',
@@ -931,7 +935,7 @@ Quick starts:
               style="border-left:2px solid var(--yellow);padding:8px 10px;margin-bottom:6px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:700;font-size:.9rem;color:var(--yellow)">${s.ticker}</span>
-          <span style="font-size:.9rem;font-weight:600">$${s.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span style="font-size:.9rem;font-weight:600">${s.current_price != null ? '$'+s.current_price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '--'}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
           <div style="display:flex;gap:4px;align-items:center">${rsiBadge}${macdBadge}</div>
