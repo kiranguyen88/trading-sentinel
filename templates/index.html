@@ -894,18 +894,15 @@ Quick starts:
                       : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
                       : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
                       : `<span class="badge bear">MACD-</span>`;
-      const chg3m = s.change_3m_pct != null ? `<span class="${s.change_3m_pct>=0?'up':'down'}" style="font-size:.7rem">${s.change_3m_pct>0?'+':''}${s.change_3m_pct?.toFixed(1)}% 3M</span>` : '';
-      return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy for mid-term?')" style="border-left:2px solid var(--yellow)">
+      return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')" style="border-left:2px solid var(--yellow)">
         <div class="holding-top">
           <span class="ticker-name" style="color:var(--yellow)">${s.ticker}</span>
           <span class="price">$${s.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
-        <div class="holding-mid">
-          <span style="color:var(--yellow);font-size:.68rem">WATCHING</span>
-          <span class="${dayClass}">${s.day_change_pct > 0 ? '+' : ''}${s.day_change_pct?.toFixed(2)}% today</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
+          <div style="display:flex;gap:4px">${rsiBadge}${macdBadge}</div>
+          <span class="${dayClass}" style="font-size:.72rem">${s.day_change_pct > 0 ? '+' : ''}${s.day_change_pct?.toFixed(2)}%</span>
         </div>
-        ${chg3m ? `<div style="margin-top:3px">${chg3m}</div>` : ''}
-        <div class="indicator-row" style="margin-top:5px">${rsiBadge}${macdBadge}</div>
       </div>`;
     }).join('');
   }
