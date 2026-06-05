@@ -80,46 +80,80 @@ def _push_prices(payload: str):
             _sse_queues.remove(q)
 
 def _fetch_live_prices() -> list:
-    """Batch-fetch latest price + day-change for all portfolio holdings."""
+    """Batch-fetch latest price + day-change for portfolio holdings AND watchlist."""
     global _fast_prices
-    holdings = load_portfolio().get("holdings", [])
-    if not holdings:
+    portfolio  = load_portfolio()
+    holdings   = portfolio.get("holdings", [])
+    raw_wl     = portfolio.get("watchlist", [])
+    wl_tickers = [w if isinstance(w, str) else w.get("ticker", "") for w in raw_wl]
+    wl_tickers = [t for t in wl_tickers if t]
+
+    holding_set  = {h["ticker"] for h in holdings}
+    all_tickers  = list(holding_set | set(wl_tickers))
+    if not all_tickers:
         return []
-    tickers = [h["ticker"] for h in holdings]
+
     try:
         raw = _yf.download(
-            " ".join(tickers),
+            " ".join(all_tickers),
             period="5d", interval="1m",
             progress=False, auto_adjust=True,
         )
-        # Normalise: single ticker → DataFrame with one column
+        # Normalise: single ticker → DataFrame with one column level
         closes = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=1)
         if isinstance(closes, _pd.Series):
-            closes = closes.to_frame(tickers[0])
+            closes = closes.to_frame(all_tickers[0])
 
-        results = []
-        for h in holdings:
-            t = h["ticker"]
+        def _price_and_chg(t):
             try:
                 s = closes[t].dropna() if t in closes.columns else closes.iloc[:, 0].dropna()
                 if s.empty:
-                    continue
-                current   = float(s.iloc[-1])
-                today     = s.index[-1].normalize()
-                prev_s    = s[s.index.normalize() < today]
-                prev_close= float(prev_s.iloc[-1]) if not prev_s.empty else current
-                day_pct   = round((current - prev_close) / prev_close * 100, 2) if prev_close else 0
-                payload   = {
-                    "ticker":        t,
-                    "current_price": round(current, 2),
-                    "day_change_pct":day_pct,
-                    "unrealized_pnl":round((current - h["avg_buy_price"]) * h["quantity"], 2),
-                    "pnl_pct":       round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
-                }
-                results.append(payload)
-                _fast_prices[t] = payload
+                    return None, None
+                current    = float(s.iloc[-1])
+                today      = s.index[-1].normalize()
+                prev_s     = s[s.index.normalize() < today]
+                prev_close = float(prev_s.iloc[-1]) if not prev_s.empty else current
+                day_pct    = round((current - prev_close) / prev_close * 100, 2) if prev_close else 0
+                return current, day_pct
             except Exception as e:
                 print(f"[LivePrice] {t}: {e}")
+                return None, None
+
+        results = []
+
+        # ── Portfolio holdings (include PnL fields) ──
+        for h in holdings:
+            t = h["ticker"]
+            current, day_pct = _price_and_chg(t)
+            if current is None:
+                continue
+            payload = {
+                "type":          "portfolio",
+                "ticker":        t,
+                "current_price": round(current, 2),
+                "day_change_pct":day_pct,
+                "unrealized_pnl":round((current - h["avg_buy_price"]) * h["quantity"], 2),
+                "pnl_pct":       round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
+            }
+            results.append(payload)
+            _fast_prices[t] = payload
+
+        # ── Watchlist tickers (price + day change only) ──
+        for t in wl_tickers:
+            if t in holding_set:
+                continue   # already handled above
+            current, day_pct = _price_and_chg(t)
+            if current is None:
+                continue
+            payload = {
+                "type":          "watchlist",
+                "ticker":        t,
+                "current_price": round(current, 2),
+                "day_change_pct":day_pct,
+            }
+            results.append(payload)
+            _fast_prices[t] = payload
+
         return results
     except Exception as e:
         print(f"[LivePrice] batch error: {e}")

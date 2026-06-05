@@ -956,10 +956,10 @@ Quick starts:
       const chgTxt = s.day_change_pct != null ? `${sign}${s.day_change_pct.toFixed(2)}%` : '--';
       const priceStr = s.current_price != null ? '$'+s.current_price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
       const meta = [s.entry_target ? `E$${s.entry_target}` : '', s.stop_target ? `S$${s.stop_target}` : ''].filter(Boolean).join(' ');
-      return `<div class="wl-row" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')">
+      return `<div class="wl-row" data-ticker="${s.ticker}" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')">
         <span style="font-weight:700;font-size:.8rem;color:var(--yellow);width:46px;flex-shrink:0">${s.ticker}</span>
-        <span style="font-size:.8rem;font-weight:600;flex:1">${priceStr}</span>
-        <span class="${dayClass}" style="font-size:.7rem;width:60px;text-align:right;flex-shrink:0;white-space:nowrap">${chgTxt}</span>
+        <span data-wl="price" style="font-size:.8rem;font-weight:600;flex:1">${priceStr}</span>
+        <span data-wl="chg" class="${dayClass}" style="font-size:.7rem;width:60px;text-align:right;flex-shrink:0;white-space:nowrap">${chgTxt}</span>
         <span style="display:flex;gap:2px;margin-left:6px;flex-shrink:0">${rsiBadge}${macdBadge}</span>
         ${meta ? `<span style="font-size:.62rem;color:var(--muted);margin-left:5px;white-space:nowrap;flex-shrink:0">${meta}</span>` : ''}
       </div>`;
@@ -1162,24 +1162,39 @@ Quick starts:
 
   function applyPriceUpdate(prices) {
     prices.forEach(p => {
-      const card = document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
-      if (!card) return;
-      const isProfitable = (p.pnl_pct || 0) >= 0;
       const daySign  = (p.day_change_pct||0) > 0 ? '+' : '';
-      const pnlSign  = (p.pnl_pct||0)       > 0 ? '+' : '';
       const dayClass = (p.day_change_pct||0) > 0 ? 'up' : (p.day_change_pct||0) < 0 ? 'down' : 'neutral';
-      const pnlClass = (p.pnl_pct||0)       > 0 ? 'up' : (p.pnl_pct||0)       < 0 ? 'down' : 'neutral';
-      const dayDollar = (p.current_price||0) * (p.day_change_pct||0) / (100 + (p.day_change_pct||0));
-      const dayStr = `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${(p.day_change_pct||0).toFixed(2)}%)`;
 
-      const priceEl = card.querySelector('[data-field="price"]');
-      const dayEl   = card.querySelector('[data-field="day"]');
-      const pnlEl   = card.querySelector('[data-field="pnl"]');
-      if (priceEl) priceEl.textContent = `$${_fmt(p.current_price)}`;
-      if (dayEl)   { dayEl.textContent = dayStr; dayEl.className = `card-day ${dayClass}`; }
-      if (pnlEl)   { pnlEl.textContent = `${pnlSign}$${_fmt(p.unrealized_pnl,0)} (${pnlSign}${(p.pnl_pct||0).toFixed(1)}%)`; pnlEl.className = pnlClass; }
-      card.classList.toggle('card-profit', isProfitable);
-      card.classList.toggle('card-loss',  !isProfitable);
+      // ── Portfolio holding cards ──
+      const card = document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
+      if (card) {
+        const isProfitable = (p.pnl_pct || 0) >= 0;
+        const pnlSign  = (p.pnl_pct||0) > 0 ? '+' : '';
+        const pnlClass = (p.pnl_pct||0) > 0 ? 'up' : (p.pnl_pct||0) < 0 ? 'down' : 'neutral';
+        const dayDollar = (p.current_price||0) * (p.day_change_pct||0) / (100 + (p.day_change_pct||0));
+        const dayStr = `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${(p.day_change_pct||0).toFixed(2)}%)`;
+        const priceEl = card.querySelector('[data-field="price"]');
+        const dayEl   = card.querySelector('[data-field="day"]');
+        const pnlEl   = card.querySelector('[data-field="pnl"]');
+        if (priceEl) priceEl.textContent = `$${_fmt(p.current_price)}`;
+        if (dayEl)   { dayEl.textContent = dayStr; dayEl.className = `card-day ${dayClass}`; }
+        if (pnlEl)   { pnlEl.textContent = `${pnlSign}$${_fmt(p.unrealized_pnl,0)} (${pnlSign}${(p.pnl_pct||0).toFixed(1)}%)`; pnlEl.className = pnlClass; }
+        card.classList.toggle('card-profit', isProfitable);
+        card.classList.toggle('card-loss',  !isProfitable);
+      }
+
+      // ── Watchlist sidebar rows ──
+      const wlRow = document.querySelector(`.wl-row[data-ticker="${p.ticker}"]`);
+      if (wlRow) {
+        const priceEl = wlRow.querySelector('[data-wl="price"]');
+        const chgEl   = wlRow.querySelector('[data-wl="chg"]');
+        if (priceEl) priceEl.textContent = '$' + _fmt(p.current_price);
+        if (chgEl) {
+          chgEl.textContent = `${daySign}${(p.day_change_pct||0).toFixed(2)}%`;
+          chgEl.className = dayClass;
+          chgEl.style.cssText = 'font-size:.7rem;width:60px;text-align:right;flex-shrink:0;white-space:nowrap';
+        }
+      }
     });
   }
 

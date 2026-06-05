@@ -1,5 +1,6 @@
 google-genai
 flask
+gunicorn
 yfinance
 pandas
 numpy
