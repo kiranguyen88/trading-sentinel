@@ -80,7 +80,7 @@
     .indicator-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
     .badge {
       font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 700;
-      background: var(--border); color: var(--text);
+      background: var(--border); color: var(--text); white-space: nowrap;
     }
     .badge.warn { background: #3d2a00; color: var(--yellow); }
     .badge.bull  { background: #1a3d2a; color: var(--green); }
@@ -231,7 +231,7 @@
 
     /* ── Watchlist right panel ── */
     .breadth-panel {
-      width: 230px; flex-shrink: 0; background: var(--surface);
+      width: 300px; flex-shrink: 0; background: var(--surface);
       border-left: 1px solid var(--border); display: flex; flex-direction: column;
       overflow-y: auto; padding: 0;
     }
@@ -895,20 +895,25 @@ Quick starts:
                       : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
                       : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
                       : `<span class="badge bear">MACD-</span>`;
-      const entryStop = (s.entry_target || s.stop_target)
-        ? `<div style="font-size:.66rem;color:var(--muted);margin-top:3px">${s.entry_target?`Entry $${s.entry_target}`:''}${s.entry_target&&s.stop_target?' · ':''}${s.stop_target?`Stop $${s.stop_target}`:''}</div>` : '';
-      const notesTxt = s.notes
-        ? `<div style="font-size:.66rem;color:var(--muted);font-style:italic;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.notes}</div>` : '';
-      return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')" style="border-left:2px solid var(--yellow)">
-        <div class="holding-top">
-          <span class="ticker-name" style="color:var(--yellow)">${s.ticker}</span>
-          <span class="price">$${s.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+      const dollarChg = s.current_price * s.day_change_pct / (100 + s.day_change_pct);
+      const sign = s.day_change_pct > 0 ? '+' : '';
+      const chgTxt = `${sign}$${Math.abs(dollarChg).toFixed(2)} (${sign}${s.day_change_pct?.toFixed(2)}%)`;
+      const meta = [
+        s.entry_target ? `Entry $${s.entry_target}` : '',
+        s.stop_target  ? `Stop $${s.stop_target}`   : '',
+        s.notes        ? s.notes                     : '',
+      ].filter(Boolean).join(' · ');
+      return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')"
+              style="border-left:2px solid var(--yellow);padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:700;font-size:.9rem;color:var(--yellow)">${s.ticker}</span>
+          <span style="font-size:.9rem;font-weight:600">$${s.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
-          <div style="display:flex;gap:4px">${rsiBadge}${macdBadge}</div>
-          <span class="${dayClass}" style="font-size:.72rem">${(() => { const d = s.current_price * s.day_change_pct / (100 + s.day_change_pct); const sign = s.day_change_pct > 0 ? '+' : ''; return `${sign}$${Math.abs(d).toFixed(2)} (${sign}${s.day_change_pct?.toFixed(2)}%)`; })()}</span>
+          <div style="display:flex;gap:4px;align-items:center">${rsiBadge}${macdBadge}</div>
+          <span class="${dayClass}" style="font-size:.72rem;white-space:nowrap">${chgTxt}</span>
         </div>
-        ${entryStop}${notesTxt}
+        ${meta ? `<div style="font-size:.64rem;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta}</div>` : ''}
       </div>`;
     }).join('');
   }
