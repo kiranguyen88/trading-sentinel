@@ -562,12 +562,17 @@ Quick starts:
 
       const pnlClass = h.pnl_pct > 0 ? 'up' : h.pnl_pct < 0 ? 'down' : 'neutral';
       const dayClass = h.day_change_pct > 0 ? 'up' : h.day_change_pct < 0 ? 'down' : 'neutral';
+      const dayDollar = (h.current_price || 0) * (h.day_change_pct || 0) / (100 + (h.day_change_pct || 0));
+      const daySign = (h.day_change_pct || 0) > 0 ? '+' : '';
+      const dayStr = h.day_change_pct != null
+        ? `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${h.day_change_pct.toFixed(2)}%)`
+        : '--';
 
       return `<div class="holding-card" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="holding-top">
           <span class="ticker-name">${h.ticker}<span style="font-weight:400;font-size:.7rem;color:var(--muted);margin-left:5px">${h.quantity}sh</span></span>
           <span style="display:flex;align-items:center;gap:7px">
-            <span class="${dayClass}" style="font-size:.72rem">${h.day_change_pct > 0 ? '+' : ''}${h.day_change_pct?.toFixed(2)}%</span>
+            <span class="${dayClass}" style="font-size:.72rem">${dayStr}</span>
             <span class="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </span>
         </div>
