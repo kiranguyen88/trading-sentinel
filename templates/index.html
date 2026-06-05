@@ -565,16 +565,6 @@ Quick starts:
 
       const pnlClass = h.pnl_pct > 0 ? 'up' : h.pnl_pct < 0 ? 'down' : 'neutral';
       const dayClass = h.day_change_pct > 0 ? 'up' : h.day_change_pct < 0 ? 'down' : 'neutral';
-      const rsi = h.rsi_14;
-      const rsiBadge = rsi > 75 ? `<span class="badge bear">RSI ${rsi} OB</span>`
-                     : rsi < 25 ? `<span class="badge bull">RSI ${rsi} OS</span>`
-                     : `<span class="badge">RSI ${rsi}</span>`;
-      const macdData = h.macd || {};
-      const macdBadge = macdData.bullish_crossover ? `<span class="badge bull">MACD ↑</span>`
-                      : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
-                      : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
-                      : `<span class="badge bear">MACD-</span>`;
-      const volBadge = (h.volume||{}).ratio > 2 ? `<span class="badge warn">Vol ×${(h.volume.ratio).toFixed(1)}</span>` : '';
 
       return `<div class="holding-card" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="holding-top">
@@ -589,7 +579,6 @@ Quick starts:
           <span style="color:var(--muted);font-weight:400">P&amp;L</span>
           <span class="${pnlClass}">${h.unrealized_pnl > 0 ? '+' : ''}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${h.pnl_pct > 0 ? '+' : ''}${h.pnl_pct?.toFixed(1)}%)</span>
         </div>
-        <div class="indicator-row">${rsiBadge}${macdBadge}${volBadge}</div>
       </div>`;
     }).join('');
   }
