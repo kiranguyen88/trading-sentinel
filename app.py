@@ -20,6 +20,41 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# ---------------------------------------------------------------------------
+# Simple TTL cache — prevents hammering yfinance on every 60-second refresh
+# ---------------------------------------------------------------------------
+import time as _time
+
+_cache: dict = {}          # key → {"data": ..., "ts": float}
+_CACHE_TTL  = 120          # seconds before a fresh fetch is attempted
+_CACHE_HARD = 600          # seconds before stale data is considered too old
+
+def _cache_get(key):
+    """Return (data, is_stale). data=None if nothing cached."""
+    entry = _cache.get(key)
+    if not entry:
+        return None, False
+    age = _time.time() - entry["ts"]
+    return entry["data"], age > _CACHE_TTL   # stale = TTL expired but data exists
+
+def _cache_set(key, data):
+    _cache[key] = {"data": data, "ts": _time.time()}
+
+def _cached_fetch(key, fetch_fn):
+    """Try fetch_fn(); on error return stale cache if available."""
+    data, stale = _cache_get(key)
+    if data is not None and not stale:
+        return data, False                   # fresh cache hit
+    try:
+        fresh = fetch_fn()
+        _cache_set(key, fresh)
+        return fresh, False
+    except Exception as e:
+        if data is not None:
+            print(f"[Cache] {key} fetch failed ({e}), serving stale data")
+            return data, True                # stale fallback
+        raise                                # nothing cached — re-raise
+
 # Track which alerts were already sent today so we don't spam
 _sent_alerts: set = set()
 
@@ -191,17 +226,26 @@ def index():
 
 @app.route("/portfolio")
 def portfolio():
-    snapshot = get_portfolio_snapshot()
-    return jsonify(snapshot)
+    try:
+        data, stale = _cached_fetch("portfolio", get_portfolio_snapshot)
+        resp = jsonify(data)
+        if stale:
+            resp.headers["X-Stale"] = "1"
+        return resp
+    except Exception as e:
+        return jsonify([]), 503
 
 
 @app.route("/watchlist")
 def watchlist():
     try:
-        snapshot = get_watchlist_snapshot()
-        return jsonify(snapshot)
+        data, stale = _cached_fetch("watchlist", get_watchlist_snapshot)
+        resp = jsonify(data)
+        if stale:
+            resp.headers["X-Stale"] = "1"
+        return resp
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify([]), 503
 
 
 @app.route("/daily-digest", methods=["POST"])

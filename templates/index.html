@@ -543,17 +543,31 @@ Quick starts:
   setInterval(updateClock, 1000);
 
   // ── Portfolio sidebar ──
+  let _lastPortfolio = null;
   async function loadPortfolio() {
     document.getElementById('refresh-btn').style.transform = 'rotate(360deg)';
     try {
       const res = await fetch('/portfolio');
       const data = await res.json();
-      renderPortfolio(data);
-      renderCharts(data);
+      if (Array.isArray(data) && data.length > 0) {
+        _lastPortfolio = data;
+        renderPortfolio(data);
+        renderCharts(data);
+        if (res.headers.get('X-Stale')) _showStale('holdings');
+      } else if (_lastPortfolio) {
+        renderPortfolio(_lastPortfolio);
+        _showStale('holdings');
+      }
     } catch(e) {
-      document.getElementById('holdings').innerHTML = '<div style="padding:12px;color:var(--red);font-size:.78rem">Failed to load portfolio</div>';
+      if (_lastPortfolio) { renderPortfolio(_lastPortfolio); _showStale('holdings'); }
+      else document.getElementById('holdings').innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.78rem">Retrying...</div>';
     }
     setTimeout(()=>document.getElementById('refresh-btn').style.transform='',500);
+  }
+  function _showStale(elId) {
+    const el = document.getElementById(elId);
+    if (el && !el.querySelector('.stale-note'))
+      el.insertAdjacentHTML('afterbegin','<div class="stale-note" style="padding:4px 12px;font-size:.65rem;color:var(--muted)">⟳ Refreshing data...</div>');
   }
 
   function renderPortfolio(holdings) {
@@ -855,14 +869,22 @@ Quick starts:
   }
 
   // ── Watchlist sidebar ──
+  let _lastWatchlist = null;
   async function loadWatchlist() {
     try {
       const res = await fetch('/watchlist');
       if (!res.ok) throw new Error(res.status);
       const data = await res.json();
-      renderWatchlist(data);
+      if (Array.isArray(data) && data.length > 0) {
+        _lastWatchlist = data;
+        renderWatchlist(data);
+        if (res.headers.get('X-Stale')) _showStale('watchlist');
+      } else if (_lastWatchlist) {
+        renderWatchlist(_lastWatchlist);
+        _showStale('watchlist');
+      }
     } catch(e) {
-      document.getElementById('watchlist').innerHTML = '<div style="padding:8px 12px;color:var(--red);font-size:.75rem">Failed to load watchlist</div>';
+      if (_lastWatchlist) { renderWatchlist(_lastWatchlist); _showStale('watchlist'); }
     }
   }
 
