@@ -151,10 +151,10 @@ scheduler.add_job(
     id="daily_digest"
 )
 
-# Warning monitor — every 15 min (function self-gates on ET market hours)
+# Warning monitor — every 1 hour (function self-gates on ET market hours)
 scheduler.add_job(
     check_warnings, "interval",
-    minutes=15,
+    hours=1,
     id="warning_monitor"
 )
 
@@ -175,7 +175,7 @@ scheduler.add_job(
 scheduler.start()
 print("Scheduler started (Asia/Ho_Chi_Minh):")
 print("  Daily digest    -> 6:00 PM VN (Mon-Fri)")
-print("  Warning monitor -> Every 15 min (self-gates on ET market hours)")
+print("  Warning monitor -> Every 1 hour (self-gates on ET market hours)")
 print("  Close summary   -> 3:05 AM VN (Tue-Sat ≈ after US close)")
 print("  Watchlist scan  -> 5:55 PM VN (Mon-Fri)")
 
