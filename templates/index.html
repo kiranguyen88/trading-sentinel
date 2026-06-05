@@ -612,17 +612,17 @@ Quick starts:
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
       const pnlSign     = (h.pnl_pct || 0) > 0 ? '+' : '';
 
-      return `<div class="holding-card ${cardClass}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
+      return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="card-row1">
           <span class="card-ticker">${h.ticker}<span class="card-shares">${h.quantity}sh</span></span>
-          <span class="card-price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span class="card-price" data-field="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
         <div class="card-row2">
           <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-          <span class="card-day ${dayClass}">${dayStr}</span>
+          <span class="card-day ${dayClass}" data-field="day">${dayStr}</span>
         </div>
         <div class="card-pnl-label">
-          <span class="${pnlClass}">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
+          <span class="${pnlClass}" data-field="pnl">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
         </div>
       </div>`;
     }).join('');
@@ -1155,10 +1155,53 @@ Quick starts:
     if (e.target === this) closeWatchlistModal();
   });
 
+  // ── Live price updates via SSE ──
+  function _fmt(n, dec=2) {
+    return (n||0).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  }
+
+  function applyPriceUpdate(prices) {
+    prices.forEach(p => {
+      const card = document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
+      if (!card) return;
+      const isProfitable = (p.pnl_pct || 0) >= 0;
+      const daySign  = (p.day_change_pct||0) > 0 ? '+' : '';
+      const pnlSign  = (p.pnl_pct||0)       > 0 ? '+' : '';
+      const dayClass = (p.day_change_pct||0) > 0 ? 'up' : (p.day_change_pct||0) < 0 ? 'down' : 'neutral';
+      const pnlClass = (p.pnl_pct||0)       > 0 ? 'up' : (p.pnl_pct||0)       < 0 ? 'down' : 'neutral';
+      const dayDollar = (p.current_price||0) * (p.day_change_pct||0) / (100 + (p.day_change_pct||0));
+      const dayStr = `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${(p.day_change_pct||0).toFixed(2)}%)`;
+
+      const priceEl = card.querySelector('[data-field="price"]');
+      const dayEl   = card.querySelector('[data-field="day"]');
+      const pnlEl   = card.querySelector('[data-field="pnl"]');
+      if (priceEl) priceEl.textContent = `$${_fmt(p.current_price)}`;
+      if (dayEl)   { dayEl.textContent = dayStr; dayEl.className = `card-day ${dayClass}`; }
+      if (pnlEl)   { pnlEl.textContent = `${pnlSign}$${_fmt(p.unrealized_pnl,0)} (${pnlSign}${(p.pnl_pct||0).toFixed(1)}%)`; pnlEl.className = pnlClass; }
+      card.classList.toggle('card-profit', isProfitable);
+      card.classList.toggle('card-loss',  !isProfitable);
+    });
+  }
+
+  let _sse = null;
+  function startPriceStream() {
+    if (_sse) { try { _sse.close(); } catch(_) {} }
+    _sse = new EventSource('/api/stream/prices');
+    _sse.onmessage = e => {
+      try { const d = JSON.parse(e.data); if (Array.isArray(d)) applyPriceUpdate(d); } catch(_) {}
+    };
+    _sse.onerror = () => {
+      _sse.close();
+      setTimeout(startPriceStream, 30000);   // reconnect after 30 s
+    };
+  }
+
   // Init
   loadPortfolio();
   loadWatchlist();
-  setInterval(() => { loadPortfolio(); loadWatchlist(); }, 60000);
+  startPriceStream();
+  setInterval(() => { loadWatchlist(); },  60000);   // watchlist: 60 s poll
+  setInterval(() => { loadPortfolio(); }, 300000);   // full portfolio refresh: 5 min
 
 </script>
 </body>

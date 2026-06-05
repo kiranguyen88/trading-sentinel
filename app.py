@@ -1,5 +1,8 @@
 import os
 import json
+import queue as _queue
+import threading as _threading
+import pandas as _pd
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -54,6 +57,86 @@ def _cached_fetch(key, fetch_fn):
             print(f"[Cache] {key} fetch failed ({e}), serving stale data")
             return data, True                # stale fallback
         raise                                # nothing cached — re-raise
+
+# ---------------------------------------------------------------------------
+# Real-time price streaming via SSE
+# ---------------------------------------------------------------------------
+import yfinance as _yf
+
+_sse_lock       = _threading.Lock()
+_sse_queues:list= []
+_fast_prices:dict = {}      # ticker → price payload, updated every 15 s
+
+def _push_prices(payload: str):
+    """Broadcast SSE message to all connected clients; drop dead queues."""
+    with _sse_lock:
+        dead = []
+        for q in _sse_queues:
+            try:
+                q.put_nowait(payload)
+            except _queue.Full:
+                dead.append(q)
+        for q in dead:
+            _sse_queues.remove(q)
+
+def _fetch_live_prices() -> list:
+    """Batch-fetch latest price + day-change for all portfolio holdings."""
+    global _fast_prices
+    holdings = load_portfolio().get("holdings", [])
+    if not holdings:
+        return []
+    tickers = [h["ticker"] for h in holdings]
+    try:
+        raw = _yf.download(
+            " ".join(tickers),
+            period="5d", interval="1m",
+            progress=False, auto_adjust=True,
+        )
+        # Normalise: single ticker → DataFrame with one column
+        closes = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=1)
+        if isinstance(closes, _pd.Series):
+            closes = closes.to_frame(tickers[0])
+
+        results = []
+        for h in holdings:
+            t = h["ticker"]
+            try:
+                s = closes[t].dropna() if t in closes.columns else closes.iloc[:, 0].dropna()
+                if s.empty:
+                    continue
+                current   = float(s.iloc[-1])
+                today     = s.index[-1].normalize()
+                prev_s    = s[s.index.normalize() < today]
+                prev_close= float(prev_s.iloc[-1]) if not prev_s.empty else current
+                day_pct   = round((current - prev_close) / prev_close * 100, 2) if prev_close else 0
+                payload   = {
+                    "ticker":        t,
+                    "current_price": round(current, 2),
+                    "day_change_pct":day_pct,
+                    "unrealized_pnl":round((current - h["avg_buy_price"]) * h["quantity"], 2),
+                    "pnl_pct":       round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
+                }
+                results.append(payload)
+                _fast_prices[t] = payload
+            except Exception as e:
+                print(f"[LivePrice] {t}: {e}")
+        return results
+    except Exception as e:
+        print(f"[LivePrice] batch error: {e}")
+        return list(_fast_prices.values())   # serve stale on error
+
+def _price_worker():
+    import time
+    while True:
+        try:
+            prices = _fetch_live_prices()
+            if prices:
+                _push_prices(json.dumps(prices))
+        except Exception as e:
+            print(f"[PriceWorker] {e}")
+        time.sleep(15)
+
+_threading.Thread(target=_price_worker, daemon=True, name="price-worker").start()
 
 # Track which alerts were already sent today so we don't spam
 _sent_alerts: set = set()
@@ -234,6 +317,36 @@ def portfolio():
         return resp
     except Exception as e:
         return jsonify([]), 503
+
+
+@app.route("/api/stream/prices")
+def stream_prices():
+    """SSE endpoint — pushes live price updates every 15 s."""
+    q = _queue.Queue(maxsize=10)
+    with _sse_lock:
+        _sse_queues.append(q)
+    # Send cached snapshot immediately so the client doesn't wait 15 s
+    if _fast_prices:
+        q.put_nowait(json.dumps(list(_fast_prices.values())))
+
+    def generate():
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield f"data: {msg}\n\n"
+                except _queue.Empty:
+                    yield ": heartbeat\n\n"   # keep connection alive through proxies
+        finally:
+            with _sse_lock:
+                if q in _sse_queues:
+                    _sse_queues.remove(q)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/watchlist")
