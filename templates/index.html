@@ -95,16 +95,8 @@
     .card-avg  { font-size: 0.67rem; color: var(--muted); }
     .card-day  { font-size: 0.69rem; font-weight: 600; }
 
-    .card-row3 { margin-top: 7px; }
-    .card-bar-track {
-      height: 2px; background: var(--border); border-radius: 2px;
-      position: relative; overflow: hidden;
-    }
-    .card-bar-fill {
-      position: absolute; top: 0; height: 100%; border-radius: 2px;
-    }
     .card-pnl-label {
-      display: flex; justify-content: flex-end; margin-top: 3px;
+      display: flex; justify-content: flex-end; margin-top: 4px;
       font-size: 0.7rem; font-weight: 700;
     }
 
@@ -618,9 +610,6 @@ Quick starts:
 
       const isProfitable = (h.pnl_pct || 0) >= 0;
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
-      const barWidth    = Math.min(Math.abs(h.pnl_pct || 0), 100);
-      const barColor    = isProfitable ? 'var(--green)' : 'var(--red)';
-      const barSide     = isProfitable ? 'left:0' : 'right:0';
       const pnlSign     = (h.pnl_pct || 0) > 0 ? '+' : '';
 
       return `<div class="holding-card ${cardClass}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
@@ -632,13 +621,8 @@ Quick starts:
           <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           <span class="card-day ${dayClass}">${dayStr}</span>
         </div>
-        <div class="card-row3">
-          <div class="card-bar-track">
-            <div class="card-bar-fill" style="width:${barWidth}%;${barSide};background:${barColor}"></div>
-          </div>
-          <div class="card-pnl-label">
-            <span class="${pnlClass}">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
-          </div>
+        <div class="card-pnl-label">
+          <span class="${pnlClass}">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
         </div>
       </div>`;
     }).join('');
