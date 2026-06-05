@@ -64,7 +64,7 @@ def _alert_key(ticker: str, alert_type: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Immediate warning monitor — runs every 15 min on weekdays 9:30–16:00 ET
+# Immediate warning monitor — runs every 15 min (24/7); self-gates on ET market hours 9:30–16:00
 # ---------------------------------------------------------------------------
 
 def check_warnings():

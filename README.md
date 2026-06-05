@@ -10,8 +10,7 @@ An AI-powered US stock portfolio monitor with real-time technical analysis, Gemi
 - **AI Chat** — Ask anything about your portfolio using Google Gemini 2.5 Flash
 - **WhatsApp Alerts** — Automatic alerts for RSI extremes, MACD crossovers, price drops/surges, volume spikes
 - **Auto Screener** — Scans 400+ US stocks across 20 sectors, AI picks the best 5–6 mid-term setups daily
-- **Scheduled Jobs** — Daily digest, warning monitor every 15 min, after-close summary
-- **Charts** — Portfolio allocation donut, P&L bar chart, day change chart
+- **Scheduled Jobs** — Daily digest at 6 PM VN, warning monitor every 15 min, after-close summary
 - **Mobile Responsive** — Bottom tab navigation for phone use
 
 ---
@@ -123,14 +122,14 @@ Your app will be live at `https://your-app.up.railway.app`
 
 ---
 
-## Automated Schedule (GMT+7)
+## Automated Schedule (GMT+7 / Vietnam Time)
 
-| Time | Job |
+| Time (VN) | Job |
 |---|---|
-| 8:00 PM Mon–Fri | AI screener — scan 200+ stocks, update watchlist, send WhatsApp |
-| 8:30 PM Mon–Fri | Morning daily digest to WhatsApp |
-| Every 15 min, 9:30 PM–4:00 AM | Warning monitor — scan holdings for alerts |
-| 4:05 AM Mon–Fri | After-close summary to WhatsApp |
+| 5:55 PM Mon–Fri | AI screener — scan 400+ stocks, update watchlist, send WhatsApp |
+| 6:00 PM Mon–Fri | Daily digest to WhatsApp |
+| Every 15 min (all day) | Warning monitor — scans holdings, fires only during US market hours (9:30–16:00 ET) |
+| 3:05 AM Tue–Sat | After-close summary to WhatsApp (≈ 4:05 PM ET) |
 
 ---
 
