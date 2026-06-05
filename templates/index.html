@@ -369,8 +369,12 @@
 
     <div class="modal-actions">
       <span class="save-status" id="save-status"></span>
+      <button class="btn-cancel" onclick="copyPortfolioJson(this)" style="background:none;border:1px solid var(--border);color:var(--muted)">📋 Copy JSON</button>
       <button class="btn-cancel" onclick="closePortfolioModal()">Cancel</button>
       <button class="btn-save" onclick="savePortfolio()">💾 Save</button>
+    </div>
+    <div style="font-size:.68rem;color:var(--muted);margin-top:8px">
+      Paste copied JSON as <code style="background:var(--bg);padding:1px 4px;border-radius:3px">PORTFOLIO_JSON</code> in Railway → Variables to persist data across deploys.
     </div>
   </div>
 </div>
@@ -958,6 +962,16 @@ Quick starts:
 
   function closePortfolioModal() {
     document.getElementById('portfolio-modal').classList.remove('open');
+  }
+
+  async function copyPortfolioJson(btn) {
+    const res = await fetch('/portfolio-data');
+    const data = await res.json();
+    await navigator.clipboard.writeText(JSON.stringify(data));
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
   }
 
   function addWhatsappRow(number = '') {

@@ -52,10 +52,35 @@ TWILIO_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
 _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", "."), "portfolio.json")
 
 def load_portfolio() -> dict:
-    path = _PORTFOLIO_PATH
-    if not os.path.exists(path):
-        path = "portfolio.json"   # fall back to bundled defaults
-    with open(path) as f:
+    # 1. Persistent volume / local file written by save_portfolio
+    if os.path.exists(_PORTFOLIO_PATH):
+        try:
+            with open(_PORTFOLIO_PATH) as f:
+                data = json.load(f)
+            # If this has real customisation (non-null watchlist entries or
+            # whatsapp numbers), trust it over the env-var snapshot.
+            wl = data.get("watchlist", [])
+            has_custom = any(
+                isinstance(w, dict) and (w.get("entry") or w.get("stop") or w.get("notes"))
+                for w in wl
+            ) or bool(data.get("whatsapp_numbers") or data.get("whatsapp_number"))
+            if has_custom:
+                return data
+        except Exception:
+            pass
+
+    # 2. PORTFOLIO_JSON env var — set this in Railway Variables to survive redeploys
+    env_json = os.getenv("PORTFOLIO_JSON")
+    if env_json:
+        try:
+            data = json.loads(env_json)
+            save_portfolio(data)   # write to local path for this container lifetime
+            return data
+        except Exception:
+            pass
+
+    # 3. Bundled defaults (portfolio.json committed in git)
+    with open("portfolio.json") as f:
         return json.load(f)
 
 def save_portfolio(data: dict) -> None:
