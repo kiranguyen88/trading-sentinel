@@ -7,7 +7,7 @@ An AI-powered US stock portfolio monitor with real-time technical analysis, Gemi
 ## Features
 
 - **Live Dashboard** — Portfolio and watchlist with real-time prices, RSI, MACD, Bollinger Bands, P&L
-- **AI Chat** — Ask anything about your portfolio using Google Gemini 2.5 Flash
+- **AI Chat** — Ask anything about your portfolio using Google Gemini 2.5 Flash (short-term trading focus: breakouts, momentum, catalyst plays)
 - **WhatsApp Alerts** — Automatic alerts for RSI extremes, MACD crossovers, price drops/surges, volume spikes
 - **Auto Screener** — Scans 400+ US stocks across 20 sectors, AI picks the best 5–6 mid-term setups daily
 - **Scheduled Jobs** — Daily digest at 6 PM VN, warning monitor every 15 min, after-close summary
