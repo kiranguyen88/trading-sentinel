@@ -1,5 +1,6 @@
 import os
 import json
+import math
 from datetime import datetime, timezone, timedelta
 
 _GMT7 = timezone(timedelta(hours=7))
@@ -12,6 +13,16 @@ from google.genai import types
 from twilio.rest import Client as TwilioClient
 
 load_dotenv()
+
+def _clean_floats(obj):
+    """Recursively replace NaN/Inf floats with None so jsonify never emits invalid JSON."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _clean_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_floats(i) for i in obj]
+    return obj
 
 # ---------------------------------------------------------------------------
 # Clients
@@ -105,7 +116,7 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
         except Exception:
             w52_high = w52_low = None
 
-        return {
+        result = {
             "ticker": ticker,
             "current_price": round(current_price, 4),
             "day_change_pct": round(day_change_pct, 2),
@@ -136,6 +147,7 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
             },
             "week_52": {"high": w52_high, "low": w52_low},
         }
+        return _clean_floats(result)
     except Exception as e:
         return {"error": str(e), "ticker": ticker}
 

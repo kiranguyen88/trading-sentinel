@@ -871,10 +871,16 @@ Quick starts:
   // ── Watchlist sidebar ──
   let _lastWatchlist = null;
   async function loadWatchlist() {
+    const el = document.getElementById('watchlist');
     try {
       const res = await fetch('/watchlist');
       if (!res.ok) throw new Error(res.status);
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); }
+      catch(parseErr) {
+        // Server emitted invalid JSON (e.g. NaN literals) — treat as error
+        throw new Error('parse_error');
+      }
       if (Array.isArray(data) && data.length > 0) {
         _lastWatchlist = data;
         renderWatchlist(data);
@@ -882,9 +888,16 @@ Quick starts:
       } else if (_lastWatchlist) {
         renderWatchlist(_lastWatchlist);
         _showStale('watchlist');
+      } else {
+        el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">No watchlist tickers</div>';
       }
     } catch(e) {
-      if (_lastWatchlist) { renderWatchlist(_lastWatchlist); _showStale('watchlist'); }
+      if (_lastWatchlist) {
+        renderWatchlist(_lastWatchlist);
+        _showStale('watchlist');
+      } else {
+        el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">⚠️ Could not load watchlist — <a href="#" style="color:var(--accent)" onclick="loadWatchlist();return false">retry</a></div>';
+      }
     }
   }
 
