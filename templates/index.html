@@ -248,6 +248,7 @@
       font-size: .68rem; font-weight: 700; color: var(--muted);
       text-transform: uppercase; letter-spacing: .5px;
       padding: 10px 12px 4px; flex-shrink: 0;
+      display: flex; justify-content: space-between; align-items: center;
     }
 
     /* ── Bottom nav (mobile only) ── */
@@ -363,12 +364,6 @@
     </div>
 
     <div class="modal-section">
-      <h3>Watchlist</h3>
-      <div id="modal-watchlist-rows"></div>
-      <button class="add-row-btn" onclick="addWatchlistRow()">+ Add ticker</button>
-    </div>
-
-    <div class="modal-section">
       <h3>WhatsApp Numbers (all receive alerts)</h3>
       <div id="modal-whatsapp-list"></div>
       <button class="add-row-btn" onclick="addWhatsappRow()" style="margin-top:6px">+ Add WhatsApp number</button>
@@ -378,6 +373,22 @@
       <span class="save-status" id="save-status"></span>
       <button class="btn-cancel" onclick="closePortfolioModal()">Cancel</button>
       <button class="btn-save" onclick="savePortfolio()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Watchlist Edit Modal -->
+<div class="modal-overlay" id="watchlist-modal">
+  <div class="modal" style="max-width:480px">
+    <h2>✏️ Edit Watchlist</h2>
+    <div class="modal-section">
+      <div id="modal-watchlist-rows"></div>
+      <button class="add-row-btn" onclick="addWatchlistRow()">+ Add ticker</button>
+    </div>
+    <div class="modal-actions">
+      <span class="save-status" id="save-status-wl"></span>
+      <button class="btn-cancel" onclick="closeWatchlistModal()">Cancel</button>
+      <button class="btn-save" onclick="saveWatchlist()">Save</button>
     </div>
   </div>
 </div>
@@ -480,7 +491,10 @@ Quick starts:
 
   <!-- Watchlist Right Panel -->
   <div class="breadth-panel">
-    <div class="section-title">👁 Watchlist</div>
+    <div class="section-title">
+      <span>👁 Watchlist</span>
+      <button onclick="openWatchlistModal()" style="background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:.65rem;padding:2px 7px;border-radius:4px;font-weight:600;text-transform:none;letter-spacing:0">✏️ Edit</button>
+    </div>
     <div id="watchlist" style="overflow-y:auto;flex:1;padding:4px 8px"><div style="padding:8px 4px;color:var(--muted);font-size:.78rem">Loading...</div></div>
   </div>
 
@@ -950,23 +964,31 @@ Quick starts:
   async function openPortfolioModal() {
     const res = await fetch('/portfolio-data');
     _portfolioData = await res.json();
-    // Render holdings rows
     const container = document.getElementById('modal-holdings');
     container.innerHTML = '';
     (_portfolioData.holdings || []).forEach(h => addHoldingRow(h));
-    // Watchlist
-    const wlContainer = document.getElementById('modal-watchlist-rows');
-    wlContainer.innerHTML = '';
-    (_portfolioData.watchlist || []).forEach(w =>
-      addWatchlistRow(typeof w === 'string' ? {ticker: w} : w)
-    );
-    // WhatsApp numbers
     const waList = document.getElementById('modal-whatsapp-list');
     waList.innerHTML = '';
     const numbers = _portfolioData.whatsapp_numbers || (_portfolioData.whatsapp_number ? [_portfolioData.whatsapp_number] : []);
     numbers.forEach(n => addWhatsappRow(n));
     document.getElementById('save-status').textContent = '';
     document.getElementById('portfolio-modal').classList.add('open');
+  }
+
+  async function openWatchlistModal() {
+    const res = await fetch('/portfolio-data');
+    _portfolioData = await res.json();
+    const container = document.getElementById('modal-watchlist-rows');
+    container.innerHTML = '';
+    (_portfolioData.watchlist || []).forEach(w =>
+      addWatchlistRow(typeof w === 'string' ? {ticker: w} : w)
+    );
+    document.getElementById('save-status-wl').textContent = '';
+    document.getElementById('watchlist-modal').classList.add('open');
+  }
+
+  function closeWatchlistModal() {
+    document.getElementById('watchlist-modal').classList.remove('open');
   }
 
   function closePortfolioModal() {
@@ -1028,9 +1050,8 @@ Quick starts:
   }
 
   async function savePortfolio() {
-    const rows = document.querySelectorAll('#modal-holdings .holding-row');
     const holdings = [];
-    for (const row of rows) {
+    for (const row of document.querySelectorAll('#modal-holdings .holding-row')) {
       const ticker = row.querySelector('.inp-ticker').value.trim().toUpperCase();
       const qty    = parseFloat(row.querySelector('.inp-qty').value);
       const price  = parseFloat(row.querySelector('.inp-price').value);
@@ -1038,37 +1059,26 @@ Quick starts:
         holdings.push({ ticker, quantity: qty, avg_buy_price: price });
       }
     }
-    const watchlist = [];
-    for (const row of document.querySelectorAll('#modal-watchlist-rows .holding-row')) {
-      const ticker = row.querySelector('.wl-ticker').value.trim().toUpperCase();
-      if (!ticker) continue;
-      const entry = parseFloat(row.querySelector('.wl-entry').value) || null;
-      const stop  = parseFloat(row.querySelector('.wl-stop').value)  || null;
-      const notes = row.querySelector('.wl-notes').value.trim();
-      watchlist.push({ ticker, entry, stop, notes });
-    }
     const whatsapp_numbers = [...document.querySelectorAll('.wa-number-input')]
       .map(i => i.value.trim()).filter(Boolean);
-
-    const payload = { holdings, watchlist, whatsapp_numbers, whatsapp_number: whatsapp_numbers[0] || '' };
+    const payload = {
+      holdings,
+      watchlist: _portfolioData.watchlist || [],
+      whatsapp_numbers,
+      whatsapp_number: whatsapp_numbers[0] || ''
+    };
     const statusEl = document.getElementById('save-status');
     statusEl.textContent = 'Saving...';
     statusEl.style.color = 'var(--muted)';
-
     try {
       const res = await fetch('/portfolio-update', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         statusEl.textContent = 'Saved!';
         statusEl.style.color = 'var(--green)';
-        setTimeout(() => {
-          closePortfolioModal();
-          loadPortfolio();
-          loadWatchlist();
-        }, 800);
+        setTimeout(() => { closePortfolioModal(); loadPortfolio(); }, 800);
       } else {
         statusEl.textContent = 'Save failed.';
         statusEl.style.color = 'var(--red)';
@@ -1079,9 +1089,51 @@ Quick starts:
     }
   }
 
-  // Close modal on overlay click
+  async function saveWatchlist() {
+    const watchlist = [];
+    for (const row of document.querySelectorAll('#modal-watchlist-rows .holding-row')) {
+      const ticker = row.querySelector('.wl-ticker').value.trim().toUpperCase();
+      if (!ticker) continue;
+      const entry = parseFloat(row.querySelector('.wl-entry').value) || null;
+      const stop  = parseFloat(row.querySelector('.wl-stop').value)  || null;
+      const notes = row.querySelector('.wl-notes').value.trim();
+      watchlist.push({ ticker, entry, stop, notes });
+    }
+    const waNums = _portfolioData.whatsapp_numbers || (_portfolioData.whatsapp_number ? [_portfolioData.whatsapp_number] : []);
+    const payload = {
+      holdings: _portfolioData.holdings || [],
+      watchlist,
+      whatsapp_numbers: waNums,
+      whatsapp_number: waNums[0] || ''
+    };
+    const statusEl = document.getElementById('save-status-wl');
+    statusEl.textContent = 'Saving...';
+    statusEl.style.color = 'var(--muted)';
+    try {
+      const res = await fetch('/portfolio-update', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        statusEl.textContent = 'Saved!';
+        statusEl.style.color = 'var(--green)';
+        setTimeout(() => { closeWatchlistModal(); loadWatchlist(); }, 800);
+      } else {
+        statusEl.textContent = 'Save failed.';
+        statusEl.style.color = 'var(--red)';
+      }
+    } catch(e) {
+      statusEl.textContent = 'Error saving.';
+      statusEl.style.color = 'var(--red)';
+    }
+  }
+
+  // Close modals on overlay click
   document.getElementById('portfolio-modal').addEventListener('click', function(e) {
     if (e.target === this) closePortfolioModal();
+  });
+  document.getElementById('watchlist-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeWatchlistModal();
   });
 
   // Init
