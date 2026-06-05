@@ -65,14 +65,23 @@
     }
     .holding-card {
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 10px 12px; margin-bottom: 8px; cursor: pointer; transition: border-color .2s;
+      padding: 7px 10px; margin-bottom: 5px; cursor: pointer; transition: border-color .2s;
     }
     .holding-card:hover { border-color: var(--accent); }
     .holding-top { display: flex; justify-content: space-between; align-items: center; }
-    .ticker-name { font-weight: 700; font-size: 0.95rem; color: var(--accent); }
-    .price { font-size: 0.95rem; font-weight: 600; }
-    .holding-mid { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.75rem; color: var(--muted); }
-    .pnl-row { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.78rem; font-weight: 600; }
+    .ticker-name { font-weight: 700; font-size: 0.92rem; color: var(--accent); }
+    .price { font-size: 0.88rem; font-weight: 600; }
+    /* .holding-mid and .pnl-row kept for error fallback */
+    .holding-mid { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.72rem; color: var(--muted); }
+    .pnl-row { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.75rem; font-weight: 600; }
+    /* watchlist compact rows */
+    .wl-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .wl-row {
+      display: flex; align-items: center; padding: 5px 8px;
+      border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s;
+    }
+    .wl-row:last-child { border-bottom: none; }
+    .wl-row:hover { background: var(--surface); }
     .up   { color: var(--green); }
     .down { color: var(--red); }
     .neutral { color: var(--muted); }
@@ -582,16 +591,15 @@ Quick starts:
 
       return `<div class="holding-card" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="holding-top">
-          <span class="ticker-name">${h.ticker}</span>
-          <span class="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span class="ticker-name">${h.ticker}<span style="font-weight:400;font-size:.7rem;color:var(--muted);margin-left:5px">${h.quantity}sh</span></span>
+          <span style="display:flex;align-items:center;gap:7px">
+            <span class="${dayClass}" style="font-size:.72rem">${h.day_change_pct > 0 ? '+' : ''}${h.day_change_pct?.toFixed(2)}%</span>
+            <span class="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </span>
         </div>
-        <div class="holding-mid">
-          <span>${h.quantity} shares</span>
-          <span class="${dayClass}">${h.day_change_pct > 0 ? '+' : ''}${h.day_change_pct?.toFixed(2)}% today</span>
-        </div>
-        <div class="pnl-row">
-          <span style="color:var(--muted);font-weight:400">P&amp;L</span>
-          <span class="${pnlClass}">${h.unrealized_pnl > 0 ? '+' : ''}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${h.pnl_pct > 0 ? '+' : ''}${h.pnl_pct?.toFixed(1)}%)</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+          <span style="color:var(--muted);font-size:.7rem">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span class="${pnlClass}" style="font-size:.74rem;font-weight:600">${h.unrealized_pnl > 0 ? '+' : ''}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${h.pnl_pct > 0 ? '+' : ''}${h.pnl_pct?.toFixed(1)}%)</span>
         </div>
       </div>`;
     }).join('');
@@ -907,43 +915,33 @@ Quick starts:
       el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">No watchlist tickers</div>';
       return;
     }
-    el.innerHTML = items.filter(Boolean).map(s => {
-      if (s.error) return `<div class="holding-card"><span class="ticker-name">${s.ticker||'?'}</span> <span style="color:var(--red);font-size:.7rem">${s.error}</span></div>`;
+    const rows = items.filter(Boolean).map(s => {
+      if (s.error) return `<div class="wl-row"><span style="color:var(--yellow);font-weight:700;font-size:.8rem;width:46px;flex-shrink:0">${s.ticker||'?'}</span><span style="color:var(--red);font-size:.7rem;flex:1">${s.error}</span></div>`;
       const dayClass = s.day_change_pct > 0 ? 'up' : s.day_change_pct < 0 ? 'down' : 'neutral';
       const rsi = s.rsi_14;
       const rsiBadge = rsi == null ? ''
-                     : rsi > 75   ? `<span class="badge bear">RSI ${rsi} OB</span>`
-                     : rsi < 35   ? `<span class="badge bull">RSI ${rsi} low</span>`
-                     :              `<span class="badge">RSI ${rsi}</span>`;
+                     : rsi > 75   ? `<span class="badge bear" style="font-size:.58rem;padding:1px 4px">RSI${Math.round(rsi)}</span>`
+                     : rsi < 35   ? `<span class="badge bull" style="font-size:.58rem;padding:1px 4px">RSI${Math.round(rsi)}</span>`
+                     :              `<span class="badge"      style="font-size:.58rem;padding:1px 4px">RSI${Math.round(rsi)}</span>`;
       const macdData = s.macd || {};
-      const macdBadge = macdData.bullish_crossover ? `<span class="badge bull">MACD ↑</span>`
-                      : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
-                      : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
-                      : macdData.histogram < 0      ? `<span class="badge bear">MACD-</span>`
+      const macdBadge = macdData.bullish_crossover ? `<span class="badge bull" style="font-size:.58rem;padding:1px 4px">M↑</span>`
+                      : macdData.bearish_crossunder ? `<span class="badge bear" style="font-size:.58rem;padding:1px 4px">M↓</span>`
+                      : macdData.histogram > 0      ? `<span class="badge bull" style="font-size:.58rem;padding:1px 4px">M+</span>`
+                      : macdData.histogram < 0      ? `<span class="badge bear" style="font-size:.58rem;padding:1px 4px">M-</span>`
                       : '';
-      const dollarChg = (s.current_price || 0) * (s.day_change_pct || 0) / (100 + (s.day_change_pct || 0));
       const sign = (s.day_change_pct || 0) > 0 ? '+' : '';
-      const chgTxt = s.day_change_pct != null
-        ? `${sign}$${Math.abs(dollarChg).toFixed(2)} (${sign}${s.day_change_pct.toFixed(2)}%)`
-        : '--';
-      const meta = [
-        s.entry_target ? `Entry $${s.entry_target}` : '',
-        s.stop_target  ? `Stop $${s.stop_target}`   : '',
-        s.notes        ? s.notes                     : '',
-      ].filter(Boolean).join(' · ');
-      return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')"
-              style="border-left:2px solid var(--yellow);padding:8px 10px;margin-bottom:6px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:700;font-size:.9rem;color:var(--yellow)">${s.ticker}</span>
-          <span style="font-size:.9rem;font-weight:600">${s.current_price != null ? '$'+s.current_price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '--'}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
-          <div style="display:flex;gap:4px;align-items:center">${rsiBadge}${macdBadge}</div>
-          <span class="${dayClass}" style="font-size:.72rem;white-space:nowrap">${chgTxt}</span>
-        </div>
-        ${meta ? `<div style="font-size:.64rem;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta}</div>` : ''}
+      const chgTxt = s.day_change_pct != null ? `${sign}${s.day_change_pct.toFixed(2)}%` : '--';
+      const priceStr = s.current_price != null ? '$'+s.current_price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '--';
+      const meta = [s.entry_target ? `E$${s.entry_target}` : '', s.stop_target ? `S$${s.stop_target}` : ''].filter(Boolean).join(' ');
+      return `<div class="wl-row" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')">
+        <span style="font-weight:700;font-size:.8rem;color:var(--yellow);width:46px;flex-shrink:0">${s.ticker}</span>
+        <span style="font-size:.8rem;font-weight:600;flex:1">${priceStr}</span>
+        <span class="${dayClass}" style="font-size:.7rem;width:60px;text-align:right;flex-shrink:0;white-space:nowrap">${chgTxt}</span>
+        <span style="display:flex;gap:2px;margin-left:6px;flex-shrink:0">${rsiBadge}${macdBadge}</span>
+        ${meta ? `<span style="font-size:.62rem;color:var(--muted);margin-left:5px;white-space:nowrap;flex-shrink:0">${meta}</span>` : ''}
       </div>`;
-    }).join('');
+    });
+    el.innerHTML = `<div class="wl-list">${rows.join('')}</div>`;
   }
 
   // ── Portfolio Modal ──
