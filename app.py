@@ -1,6 +1,9 @@
 import os
 import json
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
 
 _GMT7 = timezone(timedelta(hours=7))
 from flask import Flask, render_template, request, Response, jsonify
@@ -66,7 +69,7 @@ def _alert_key(ticker: str, alert_type: str) -> str:
 
 def check_warnings():
     """Scan all holdings and fire WhatsApp alerts for warning conditions."""
-    now_et = datetime.now()  # APScheduler uses America/New_York timezone
+    now_et = datetime.now(_ET)   # always ET regardless of scheduler timezone
     hour, minute = now_et.hour, now_et.minute
 
     # Only during US market hours 9:30–16:00
@@ -135,43 +138,42 @@ def check_warnings():
 # ---------------------------------------------------------------------------
 # Scheduler jobs
 # ---------------------------------------------------------------------------
-scheduler = BackgroundScheduler(timezone="America/New_York")
+scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
 
-# Daily digest — 8:30 AM ET weekdays (before market open)
+# Daily digest — 6:00 PM VN time weekdays
 scheduler.add_job(
     run_daily_digest, "cron",
-    day_of_week="mon-fri", hour=8, minute=30,
+    day_of_week="mon-fri", hour=18, minute=0,
     id="daily_digest"
 )
 
-# Warning monitor — every 15 min during market hours, weekdays
+# Warning monitor — every 15 min (function self-gates on ET market hours)
 scheduler.add_job(
-    check_warnings, "cron",
-    day_of_week="mon-fri",
-    hour="9-15", minute="*/15",
+    check_warnings, "interval",
+    minutes=15,
     id="warning_monitor"
 )
 
-# After-close summary — 4:05 PM ET weekdays
+# After-close summary — 3:05 AM VN time (≈ 4:05 PM ET)
 scheduler.add_job(
     run_daily_digest, "cron",
-    day_of_week="mon-fri", hour=16, minute=5,
+    day_of_week="tue-sat", hour=3, minute=5,
     id="close_summary"
 )
 
-# Daily watchlist auto-suggest — 8:00 AM ET every weekday
+# Watchlist auto-suggest — 5:55 PM VN time weekdays (just before digest)
 scheduler.add_job(
     auto_update_watchlist, "cron",
-    day_of_week="mon-fri", hour=8, minute=0,
+    day_of_week="mon-fri", hour=17, minute=55,
     id="daily_watchlist"
 )
 
 scheduler.start()
-print("Scheduler started:")
-print("  Daily digest    -> 8:30 AM ET (Mon-Fri)")
-print("  Warning monitor -> Every 15 min, 9:30-16:00 ET (Mon-Fri)")
-print("  Close summary   -> 4:05 PM ET (Mon-Fri)")
-print("  Watchlist scan  -> 8:00 AM ET (Mon-Fri, auto-update)")
+print("Scheduler started (Asia/Ho_Chi_Minh):")
+print("  Daily digest    -> 6:00 PM VN (Mon-Fri)")
+print("  Warning monitor -> Every 15 min (self-gates on ET market hours)")
+print("  Close summary   -> 3:05 AM VN (Tue-Sat ≈ after US close)")
+print("  Watchlist scan  -> 5:55 PM VN (Mon-Fri)")
 
 
 # ---------------------------------------------------------------------------
