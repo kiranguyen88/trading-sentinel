@@ -347,8 +347,6 @@
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:var(--yellow);color:#000;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
     <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:#6e40c9;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
-    <button onclick="openPositionSizer()" style="background:#1a4a2a;color:var(--green);border:1px solid var(--green);border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">📐 Position Sizer</button>
-    <button onclick="openJournal()" style="background:#1a2a4a;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">📓 Journal</button>
   </div>
 </header>
 
@@ -393,44 +391,6 @@
   </div>
 </div>
 
-<!-- Position Sizer Modal -->
-<div class="modal-overlay" id="sizer-modal">
-  <div class="modal" style="max-width:420px">
-    <h2>📐 Position Sizer</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      <div><label style="font-size:.72rem;color:var(--muted)">Entry Price $</label><input id="sz-entry" type="number" step="0.01" placeholder="150.00" class="watchlist-input" style="margin-top:4px"></div>
-      <div><label style="font-size:.72rem;color:var(--muted)">Stop Loss $</label><input id="sz-stop" type="number" step="0.01" placeholder="145.00" class="watchlist-input" style="margin-top:4px"></div>
-      <div><label style="font-size:.72rem;color:var(--muted)">Target Price $ (optional)</label><input id="sz-target" type="number" step="0.01" placeholder="165.00" class="watchlist-input" style="margin-top:4px"></div>
-      <div><label style="font-size:.72rem;color:var(--muted)">Account Size $</label><input id="sz-account" type="number" step="100" placeholder="10000" class="watchlist-input" style="margin-top:4px"></div>
-      <div><label style="font-size:.72rem;color:var(--muted)">Risk % per Trade</label><input id="sz-risk" type="number" step="0.1" value="1" placeholder="1" class="watchlist-input" style="margin-top:4px"></div>
-    </div>
-    <button class="btn-save" onclick="calcPositionSize()" style="width:100%;margin-bottom:14px">Calculate</button>
-    <div id="sz-result" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;display:none;font-size:.85rem;line-height:1.8"></div>
-    <div class="modal-actions" style="margin-top:12px"><button class="btn-cancel" onclick="document.getElementById('sizer-modal').classList.remove('open')">Close</button></div>
-  </div>
-</div>
-
-<!-- Trade Journal Modal -->
-<div class="modal-overlay" id="journal-modal">
-  <div class="modal" style="max-width:680px">
-    <h2>📓 Trade Journal</h2>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr) 1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end">
-      <div><label style="font-size:.7rem;color:var(--muted)">Ticker</label><input id="jn-ticker" type="text" placeholder="AAPL" class="watchlist-input" style="margin-top:3px;text-transform:uppercase"></div>
-      <div><label style="font-size:.7rem;color:var(--muted)">Action</label>
-        <select id="jn-action" class="watchlist-input" style="margin-top:3px">
-          <option>BUY</option><option>SELL</option><option>SHORT</option><option>COVER</option>
-        </select>
-      </div>
-      <div><label style="font-size:.7rem;color:var(--muted)">Date</label><input id="jn-date" type="date" class="watchlist-input" style="margin-top:3px"></div>
-      <div><label style="font-size:.7rem;color:var(--muted)">Price $</label><input id="jn-price" type="number" step="0.01" placeholder="150.00" class="watchlist-input" style="margin-top:3px"></div>
-      <div><label style="font-size:.7rem;color:var(--muted)">Shares</label><input id="jn-shares" type="number" placeholder="10" class="watchlist-input" style="margin-top:3px"></div>
-      <button class="btn-save" onclick="addJournalEntry()" style="height:36px;align-self:end">Add</button>
-    </div>
-    <div><label style="font-size:.7rem;color:var(--muted)">Notes / Thesis</label><textarea id="jn-notes" placeholder="Why entering? Setup, catalyst, risk..." class="watchlist-input" style="margin-top:3px;min-height:52px;resize:vertical;width:100%"></textarea></div>
-    <div id="journal-table" style="margin-top:14px;max-height:320px;overflow-y:auto"></div>
-    <div class="modal-actions" style="margin-top:12px"><button class="btn-cancel" onclick="document.getElementById('journal-modal').classList.remove('open')">Close</button></div>
-  </div>
-</div>
 
 <div class="main">
 
@@ -1141,94 +1101,6 @@ Quick starts:
   loadWatchlist();
   setInterval(() => { loadPortfolio(); loadWatchlist(); }, 60000);
 
-  // ── Position Sizer ──
-  function openPositionSizer() {
-    document.getElementById('sizer-modal').classList.add('open');
-  }
-
-  async function calcPositionSize() {
-    const entry   = parseFloat(document.getElementById('sz-entry').value)   || 0;
-    const stop    = parseFloat(document.getElementById('sz-stop').value)    || 0;
-    const target  = parseFloat(document.getElementById('sz-target').value)  || 0;
-    const account = parseFloat(document.getElementById('sz-account').value) || 10000;
-    const risk    = parseFloat(document.getElementById('sz-risk').value)    || 1;
-
-    if (!entry || !stop) { alert('Enter entry and stop prices'); return; }
-
-    const res  = await fetch('/position-size', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ entry, stop, target, account, risk_pct: risk }) });
-    const data = await res.json();
-    if (data.error) { alert(data.error); return; }
-
-    const resultEl = document.getElementById('sz-result');
-    resultEl.style.display = 'block';
-    resultEl.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <div><span style="color:var(--muted)">Shares to Buy</span><br><strong style="font-size:1.3rem;color:var(--accent)">${data.shares}</strong></div>
-        <div><span style="color:var(--muted)">Position Value</span><br><strong>$${data.position_value.toLocaleString()}</strong></div>
-        <div><span style="color:var(--muted)">Max Risk</span><br><strong style="color:var(--red)">$${data.risk_amount.toLocaleString()}</strong></div>
-        <div><span style="color:var(--muted)">Risk/Share</span><br><strong>$${data.risk_per_share}</strong></div>
-        <div><span style="color:var(--muted)">% of Account</span><br><strong>${data.position_pct}%</strong></div>
-        ${data.risk_reward ? `<div><span style="color:var(--muted)">Risk:Reward</span><br><strong style="color:var(--green)">1 : ${data.risk_reward}</strong></div>` : ''}
-        ${data.potential_profit ? `<div><span style="color:var(--muted)">Potential Profit</span><br><strong style="color:var(--green)">+$${data.potential_profit.toLocaleString()}</strong></div>` : ''}
-      </div>`;
-  }
-
-  // ── Trade Journal ──
-  function openJournal() {
-    document.getElementById('jn-date').value = new Date().toISOString().split('T')[0];
-    document.getElementById('journal-modal').classList.add('open');
-    loadJournalTable();
-  }
-
-  async function loadJournalTable() {
-    const res     = await fetch('/journal');
-    const entries = await res.json();
-    const el      = document.getElementById('journal-table');
-    if (!entries.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.78rem;text-align:center;padding:16px">No trades logged yet.</div>'; return; }
-
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.75rem">
-      <thead><tr style="color:var(--muted);border-bottom:1px solid var(--border)">
-        <th style="text-align:left;padding:4px 6px">Date</th>
-        <th>Ticker</th><th>Action</th><th>Price</th><th>Shares</th><th>P&L</th><th>Notes</th><th></th>
-      </tr></thead>
-      <tbody>${entries.slice().reverse().map(e => {
-        const actionColor = ['BUY','COVER'].includes(e.action) ? 'var(--green)' : 'var(--red)';
-        const pnl = e.exit_price ? ((e.action==='BUY'?1:-1)*(e.exit_price - e.price)*e.shares).toFixed(0) : '';
-        const pnlHtml = pnl ? `<span style="color:${pnl>0?'var(--green)':'var(--red)'}">${pnl>0?'+':''}$${pnl}</span>` : '—';
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:4px 6px;color:var(--muted)">${e.date}</td>
-          <td style="font-weight:700;color:var(--accent)">${e.ticker}</td>
-          <td style="color:${actionColor};font-weight:600">${e.action}</td>
-          <td>$${e.price}</td><td>${e.shares||'—'}</td>
-          <td>${pnlHtml}</td>
-          <td style="color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.notes||''}">${e.notes||''}</td>
-          <td><button onclick="deleteJournalEntry('${e.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem">✕</button></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
-  }
-
-  async function addJournalEntry() {
-    const entry = {
-      ticker: document.getElementById('jn-ticker').value.toUpperCase().trim(),
-      action: document.getElementById('jn-action').value,
-      date:   document.getElementById('jn-date').value,
-      price:  parseFloat(document.getElementById('jn-price').value) || 0,
-      shares: parseInt(document.getElementById('jn-shares').value)  || 0,
-      notes:  document.getElementById('jn-notes').value.trim(),
-    };
-    if (!entry.ticker || !entry.price) { alert('Ticker and price required'); return; }
-    await fetch('/journal/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entry) });
-    ['jn-ticker','jn-price','jn-shares','jn-notes'].forEach(id => document.getElementById(id).value='');
-    loadJournalTable();
-  }
-
-  async function deleteJournalEntry(id) {
-    if (!confirm('Delete this entry?')) return;
-    await fetch(`/journal/delete/${id}`, { method:'DELETE' });
-    loadJournalTable();
-  }
 </script>
 </body>
 </html>
