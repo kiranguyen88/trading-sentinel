@@ -298,6 +298,21 @@
     /* ── Bottom nav (mobile only) ── */
     .bottom-nav { display: none; }
 
+    /* ── Mobile portfolio summary bar (hidden on desktop) ── */
+    #mobile-portfolio-summary {
+      display: none;
+      padding: 8px 14px; background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      gap: 0; flex-shrink: 0;
+    }
+    .mob-sum-cell {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      border-right: 1px solid var(--border);
+    }
+    .mob-sum-cell:last-child { border-right: none; }
+    .mob-sum-label { font-size: .58rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .mob-sum-value { font-size: .92rem; font-weight: 700; }
+
     /* ══ MOBILE RESPONSIVE ══ */
     @media (max-width: 768px) {
       body { height: 100dvh; }
@@ -358,8 +373,35 @@
 
       /* Message bubbles full width on mobile */
       .msg { max-width: 95%; }
-      .quick-prompts { padding: 0 10px 8px; }
       .input-bar { padding: 10px; }
+
+      /* Prevent iOS input zoom */
+      #user-input { font-size: 16px; }
+
+      /* Quick prompts — single horizontal scroll row */
+      .quick-prompts {
+        padding: 0 10px 10px; flex-wrap: nowrap;
+        overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .quick-prompts::-webkit-scrollbar { display: none; }
+      .qp { flex-shrink: 0; }
+
+      /* Portfolio summary bar — mobile only */
+      #mobile-portfolio-summary { display: flex; }
+
+      /* Larger holding cards for touch */
+      .holding-card { padding: 12px 14px; }
+      .card-ticker  { font-size: 1rem; }
+      .card-price   { font-size: 1.05rem; }
+      .card-day, .card-avg { font-size: 0.74rem; }
+      .card-pnl-label { font-size: 0.78rem; margin-top: 6px; }
+
+      /* Larger watchlist rows for touch */
+      .wl-row { padding: 9px 10px; min-height: 40px; }
+
+      /* SSE dot slightly larger on mobile */
+      #sse-dot { width: 8px; height: 8px; }
     }
 
     @media (min-width: 769px) {
@@ -458,6 +500,22 @@
         <button id="refresh-btn" onclick="loadPortfolio()" title="Refresh">↻</button>
       </div>
     </div>
+    <!-- Mobile-only portfolio summary strip -->
+    <div id="mobile-portfolio-summary">
+      <div class="mob-sum-cell">
+        <span class="mob-sum-label">Value</span>
+        <span class="mob-sum-value" id="mob-total-value">—</span>
+      </div>
+      <div class="mob-sum-cell">
+        <span class="mob-sum-label">Today</span>
+        <span class="mob-sum-value" id="mob-day-pnl">—</span>
+      </div>
+      <div class="mob-sum-cell">
+        <span class="mob-sum-label">Total P&L</span>
+        <span class="mob-sum-value" id="mob-total-pnl">—</span>
+      </div>
+    </div>
+
     <div class="sidebar-panel">
       <div id="holdings"><div style="padding:16px;color:var(--muted);font-size:.8rem">Loading...</div></div>
     </div>
@@ -642,6 +700,7 @@ Quick starts:
         </div>
       </div>`;
     }).join('');
+    updateMobileSummary(holdings);
   }
 
   // ── Charts ──
@@ -1176,6 +1235,31 @@ Quick starts:
     return (n||0).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
   }
 
+  function updateMobileSummary(holdings) {
+    if (window.innerWidth > 768) return;
+    const valid = (holdings || []).filter(h => !h.error && h.current_price && h.quantity);
+    if (!valid.length) return;
+
+    const totalValue = valid.reduce((s, h) => s + h.current_price * h.quantity, 0);
+    const totalPnl   = valid.reduce((s, h) => s + (h.unrealized_pnl || 0), 0);
+    const totalDay   = valid.reduce((s, h) => {
+      const chg = h.day_change_dollar != null ? h.day_change_dollar
+                : (h.current_price || 0) * (h.day_change_pct || 0) / (100 + (h.day_change_pct || 0));
+      return s + chg * h.quantity;
+    }, 0);
+
+    const fmt  = v => '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+    const sign = v => v > 0 ? '+' : v < 0 ? '-' : '';
+    const cls  = v => v > 0 ? 'mob-sum-value up' : v < 0 ? 'mob-sum-value down' : 'mob-sum-value neutral';
+
+    const valEl = document.getElementById('mob-total-value');
+    const dayEl = document.getElementById('mob-day-pnl');
+    const pnlEl = document.getElementById('mob-total-pnl');
+    if (valEl) valEl.textContent = fmt(totalValue);
+    if (dayEl) { dayEl.textContent = sign(totalDay) + fmt(totalDay); dayEl.className = cls(totalDay); }
+    if (pnlEl) { pnlEl.textContent = sign(totalPnl) + fmt(totalPnl); pnlEl.className = cls(totalPnl); }
+  }
+
   function _flash(el, dir) {
     if (!el) return;
     el.classList.remove('flash-up', 'flash-down');
@@ -1246,8 +1330,11 @@ Quick starts:
       }
     });
 
-    // Refresh charts if any portfolio price changed
-    if (portfolioUpdated && _lastPortfolio) renderCharts(_lastPortfolio);
+    // Refresh charts + mobile summary if any portfolio price changed
+    if (portfolioUpdated && _lastPortfolio) {
+      renderCharts(_lastPortfolio);
+      updateMobileSummary(_lastPortfolio);
+    }
   }
 
   function _setSseDot(online) {
