@@ -354,8 +354,9 @@
     </div>
 
     <div class="modal-section">
-      <h3>Watchlist (comma-separated tickers)</h3>
-      <input type="text" class="watchlist-input" id="modal-watchlist" placeholder="META, AMZN, AMD, PLTR">
+      <h3>Watchlist</h3>
+      <div id="modal-watchlist-rows"></div>
+      <button class="add-row-btn" onclick="addWatchlistRow()">+ Add ticker</button>
     </div>
 
     <div class="modal-section">
@@ -894,6 +895,10 @@ Quick starts:
                       : macdData.bearish_crossunder ? `<span class="badge bear">MACD ↓</span>`
                       : macdData.histogram > 0      ? `<span class="badge bull">MACD+</span>`
                       : `<span class="badge bear">MACD-</span>`;
+      const entryStop = (s.entry_target || s.stop_target)
+        ? `<div style="font-size:.66rem;color:var(--muted);margin-top:3px">${s.entry_target?`Entry $${s.entry_target}`:''}${s.entry_target&&s.stop_target?' · ':''}${s.stop_target?`Stop $${s.stop_target}`:''}</div>` : '';
+      const notesTxt = s.notes
+        ? `<div style="font-size:.66rem;color:var(--muted);font-style:italic;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.notes}</div>` : '';
       return `<div class="holding-card" onclick="sendQuick('Full analysis of ${s.ticker}: technical + news + should I buy short-term?')" style="border-left:2px solid var(--yellow)">
         <div class="holding-top">
           <span class="ticker-name" style="color:var(--yellow)">${s.ticker}</span>
@@ -903,6 +908,7 @@ Quick starts:
           <div style="display:flex;gap:4px">${rsiBadge}${macdBadge}</div>
           <span class="${dayClass}" style="font-size:.72rem">${s.day_change_pct > 0 ? '+' : ''}${s.day_change_pct?.toFixed(2)}%</span>
         </div>
+        ${entryStop}${notesTxt}
       </div>`;
     }).join('');
   }
@@ -918,7 +924,11 @@ Quick starts:
     container.innerHTML = '';
     (_portfolioData.holdings || []).forEach(h => addHoldingRow(h));
     // Watchlist
-    document.getElementById('modal-watchlist').value = (_portfolioData.watchlist || []).join(', ');
+    const wlContainer = document.getElementById('modal-watchlist-rows');
+    wlContainer.innerHTML = '';
+    (_portfolioData.watchlist || []).forEach(w =>
+      addWatchlistRow(typeof w === 'string' ? {ticker: w} : w)
+    );
     // WhatsApp numbers
     const waList = document.getElementById('modal-whatsapp-list');
     waList.innerHTML = '';
@@ -963,6 +973,29 @@ Quick starts:
     container.appendChild(row);
   }
 
+  function addWatchlistRow(w = {}) {
+    const container = document.getElementById('modal-watchlist-rows');
+    const row = document.createElement('div');
+    row.className = 'holding-row';
+    row.style.flexWrap = 'wrap';
+    row.innerHTML = `
+      <input class="wl-ticker inp-ticker" type="text" placeholder="TICKER" value="${w.ticker||''}">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <label>Entry $</label>
+        <input class="wl-entry inp-qty" type="number" step="0.01" placeholder="0.00" value="${w.entry||''}">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <label>Stop $</label>
+        <input class="wl-stop inp-price" type="number" step="0.01" placeholder="0.00" value="${w.stop||''}">
+      </div>
+      <input class="wl-notes" type="text" placeholder="Notes / thesis..."
+             value="${(w.notes||'').replace(/"/g,'&quot;')}"
+             style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.82rem;outline:none">
+      <button class="del-btn" onclick="this.parentElement.remove()" title="Remove">✕</button>
+    `;
+    container.appendChild(row);
+  }
+
   async function savePortfolio() {
     const rows = document.querySelectorAll('#modal-holdings .holding-row');
     const holdings = [];
@@ -974,8 +1007,15 @@ Quick starts:
         holdings.push({ ticker, quantity: qty, avg_buy_price: price });
       }
     }
-    const watchlistRaw = document.getElementById('modal-watchlist').value;
-    const watchlist = watchlistRaw.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+    const watchlist = [];
+    for (const row of document.querySelectorAll('#modal-watchlist-rows .holding-row')) {
+      const ticker = row.querySelector('.wl-ticker').value.trim().toUpperCase();
+      if (!ticker) continue;
+      const entry = parseFloat(row.querySelector('.wl-entry').value) || null;
+      const stop  = parseFloat(row.querySelector('.wl-stop').value)  || null;
+      const notes = row.querySelector('.wl-notes').value.trim();
+      watchlist.push({ ticker, entry, stop, notes });
+    }
     const whatsapp_numbers = [...document.querySelectorAll('.wa-number-input')]
       .map(i => i.value.trim()).filter(Boolean);
 

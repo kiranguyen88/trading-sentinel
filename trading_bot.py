@@ -164,16 +164,27 @@ def get_portfolio_snapshot() -> list:
     return results
 
 
+def _wl_ticker(item) -> str:
+    """Extract ticker string from a watchlist item (string or dict)."""
+    return item["ticker"] if isinstance(item, dict) else item
+
 def get_watchlist_snapshot() -> list:
     """Watchlist tickers — technical data only, fetched in parallel."""
     watchlist = load_portfolio().get("watchlist", [])
     if not watchlist:
         return []
     with ThreadPoolExecutor(max_workers=8) as ex:
-        futures = {ex.submit(get_stock_data, t, "1mo"): i for i, t in enumerate(watchlist)}
+        futures = {ex.submit(get_stock_data, _wl_ticker(item), "1mo"): (i, item)
+                   for i, item in enumerate(watchlist)}
         results = [None] * len(watchlist)
         for future in as_completed(futures):
-            results[futures[future]] = future.result()
+            idx, item = futures[future]
+            data = future.result()
+            if isinstance(item, dict):
+                data["entry_target"] = item.get("entry")
+                data["stop_target"]  = item.get("stop")
+                data["notes"]        = item.get("notes", "")
+            results[idx] = data
     return results
 
 
@@ -361,7 +372,7 @@ def build_system_prompt() -> str:
         f"  - {h['ticker']}: {h['quantity']} shares @ avg ${h['avg_buy_price']}"
         for h in portfolio.get("holdings", [])
     )
-    watchlist_txt = ", ".join(portfolio.get("watchlist", [])) or "none"
+    watchlist_txt = ", ".join(_wl_ticker(t) for t in portfolio.get("watchlist", [])) or "none"
 
     return f"""You are **Trading Sentinel** — an elite AI trading assistant for a short-term US stock market trader.
 

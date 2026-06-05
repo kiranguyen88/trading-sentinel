@@ -5,7 +5,13 @@
     {"ticker": "NVDA", "quantity": 8,  "avg_buy_price": 850.0},
     {"ticker": "MSFT", "quantity": 6,  "avg_buy_price": 400.0}
   ],
-  "watchlist": ["META", "AMZN", "AMD", "PLTR", "MSTR"],
+  "watchlist": [
+    {"ticker": "META",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "AMZN",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "AMD",   "entry": null, "stop": null, "notes": ""},
+    {"ticker": "PLTR",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "MSTR",  "entry": null, "stop": null, "notes": ""}
+  ],
   "whatsapp_number": "whatsapp:+84949308344",
   "whatsapp_numbers": ["whatsapp:+84949308344"]
 }
