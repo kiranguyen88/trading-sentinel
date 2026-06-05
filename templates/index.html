@@ -518,16 +518,15 @@ Quick starts:
   // ── Clock ──
   function updateClock() {
     const now = new Date();
-    const gmt7 = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Bangkok', hour:'2-digit', minute:'2-digit', second:'2-digit',
+    const et = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', second:'2-digit',
       weekday:'short', month:'short', day:'numeric'
     }).format(now);
-    // Market hours 9:30–16:00 ET Mon-Fri (ET = GMT+7 minus 11h or 12h)
-    const etHour = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
-    const h = etHour.getHours(), m = etHour.getMinutes(), day = etHour.getDay();
+    const etDate = new Date(now.toLocaleString('en-US', {timeZone:'America/New_York'}));
+    const h = etDate.getHours(), m = etDate.getMinutes(), day = etDate.getDay();
     const open = (day>=1&&day<=5) && (h>9||(h===9&&m>=30)) && h<16;
     document.getElementById('market-time').innerHTML =
-      `${gmt7} GMT+7 &nbsp;<span style="color:${open?'var(--green)':'var(--red)'}">${open?'● MARKET OPEN':'● MARKET CLOSED'}</span>`;
+      `${et} ET &nbsp;<span style="color:${open?'var(--green)':'var(--red)'}">${open?'● MARKET OPEN':'● MARKET CLOSED'}</span>`;
   }
   updateClock();
   setInterval(updateClock, 1000);

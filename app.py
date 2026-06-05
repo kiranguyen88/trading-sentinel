@@ -23,38 +23,42 @@ app = Flask(__name__)
 # Track which alerts were already sent today so we don't spam
 _sent_alerts: set = set()
 
-def auto_update_watchlist():
-    """Weekly: run screener, update portfolio.json watchlist, notify via WhatsApp."""
+def auto_scan_watchlist():
+    """Scan current watchlist tickers and send technical signals to WhatsApp."""
     try:
-        print("[Screener] Running weekly auto-suggest...")
-        result = ai_suggest_watchlist(top_n_final=6)
-        suggestions = result.get("suggestions", [])
-        if not suggestions:
+        snapshot = get_watchlist_snapshot()
+        if not snapshot:
+            print("[Watchlist Scan] No watchlist tickers.")
             return
 
-        new_tickers = [s["ticker"] for s in suggestions]
+        lines = ["📋 Trading Sentinel — Watchlist Scan\n"]
+        for s in snapshot:
+            if "error" in s:
+                lines.append(f"⚠️ {s['ticker']}: {s['error']}")
+                continue
+            ticker = s["ticker"]
+            price  = s.get("current_price", 0)
+            chg    = s.get("day_change_pct", 0)
+            rsi    = s.get("rsi_14", 0)
+            macd   = s.get("macd", {})
+            vol    = s.get("volume", {})
 
-        # Update portfolio.json
-        portfolio = load_portfolio()
-        portfolio["watchlist"] = new_tickers
-        with open("portfolio.json", "w") as f:
-            json.dump(portfolio, f, indent=2)
+            signals = []
+            if rsi > 70:   signals.append(f"RSI {rsi:.0f} OB")
+            elif rsi < 30: signals.append(f"RSI {rsi:.0f} OS")
+            if macd.get("bullish_crossover"):  signals.append("MACD ↑ cross")
+            if macd.get("bearish_crossunder"): signals.append("MACD ↓ cross")
+            if vol.get("ratio", 1) >= 2:       signals.append(f"Vol ×{vol['ratio']:.1f}")
+            if abs(chg) >= 3:                  signals.append(f"{'▲' if chg>0 else '▼'}{abs(chg):.1f}%")
 
-        # Send WhatsApp summary
-        lines = ["Trading Sentinel — Weekly Watchlist Update\n"]
-        for s in suggestions:
-            lines.append(
-                f"{s['ticker']} ({s['sector']}) | Entry: {s['entry_range']} | "
-                f"Target: {s['target']} | Stop: {s['stop_loss']} | {s['horizon']}\n"
-                f"  {s['summary']}"
-            )
-        note = result.get("market_note", "")
-        if note:
-            lines.append(f"\nMarket: {note}")
+            sig_txt = " | ".join(signals) if signals else "No alerts"
+            chg_sym = "+" if chg >= 0 else ""
+            lines.append(f"*{ticker}* ${price:,.2f} ({chg_sym}{chg:.2f}%) — {sig_txt}")
+
         send_whatsapp("\n".join(lines))
-        print(f"[Screener] Watchlist updated: {new_tickers}")
+        print(f"[Watchlist Scan] Sent for {len(snapshot)} tickers.")
     except Exception as e:
-        print(f"[Screener] Error: {e}")
+        print(f"[Watchlist Scan] Error: {e}")
 
 
 def _alert_key(ticker: str, alert_type: str) -> str:
@@ -161,9 +165,9 @@ scheduler.add_job(
     id="close_summary"
 )
 
-# Watchlist auto-suggest — 5:55 PM VN time weekdays (just before digest)
+# Watchlist scan — 5:55 PM VN time weekdays (just before digest)
 scheduler.add_job(
-    auto_update_watchlist, "cron",
+    auto_scan_watchlist, "cron",
     day_of_week="mon-fri", hour=17, minute=55,
     id="daily_watchlist"
 )
