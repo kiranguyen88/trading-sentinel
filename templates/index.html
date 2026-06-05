@@ -229,21 +229,17 @@
     /* ── Content row (sidebar + chat) ── */
     .content-row { display: flex; flex: 1; overflow: hidden; }
 
-    /* ── Market Breadth right panel ── */
+    /* ── Watchlist right panel ── */
     .breadth-panel {
-      width: 200px; flex-shrink: 0; background: var(--surface);
+      width: 230px; flex-shrink: 0; background: var(--surface);
       border-left: 1px solid var(--border); display: flex; flex-direction: column;
-      overflow-y: auto; padding: 10px 10px;
+      overflow-y: auto; padding: 0;
     }
     .breadth-panel .section-title {
       font-size: .68rem; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+      text-transform: uppercase; letter-spacing: .5px;
+      padding: 10px 12px 4px; flex-shrink: 0;
     }
-    .breadth-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 5px 0; border-bottom: 1px solid var(--border); font-size: .72rem;
-    }
-    .breadth-ticker { font-weight: 700; color: var(--accent); }
 
     /* ── Bottom nav (mobile only) ── */
     .bottom-nav { display: none; }
@@ -266,8 +262,7 @@
       .charts-panel { padding: 8px 10px; gap: 8px; }
       .chart-card { min-width: 160px; padding: 8px; }
 
-      /* Hide charts + breadth panel on mobile */
-      .charts-panel { display: none; }
+      /* Hide right watchlist panel on mobile (accessible via left sidebar tab) */
       .breadth-panel { display: none; }
 
       /* Content row becomes tab-based */
@@ -331,9 +326,8 @@
 <body>
 
 <header>
-  <h1>📡 Trading Sentinel <span>US Market · Mid-Term</span></h1>
+  <h1>📡 Trading Sentinel <span>US Market · Short-Term</span></h1>
   <span id="market-time">Loading...</span>
-  <div id="regime-badge" style="display:none;padding:4px 10px;border-radius:20px;font-size:.72rem;font-weight:700;margin-left:8px"></div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:var(--yellow);color:#000;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
@@ -430,10 +424,6 @@
       <div id="holdings"><div style="padding:16px;color:var(--muted);font-size:.8rem">Loading...</div></div>
     </div>
 
-    <div class="sidebar-panel-watch">
-      <div class="sidebar-section-header">Watchlist</div>
-      <div id="watchlist"><div style="padding:8px 12px;color:var(--muted);font-size:.78rem">Loading...</div></div>
-    </div>
 
   </div>
 
@@ -473,14 +463,10 @@ Quick starts:
     </div>
   </div>
 
-  <!-- Market Breadth Right Panel -->
+  <!-- Watchlist Right Panel -->
   <div class="breadth-panel">
-    <div class="section-title">🌐 Market Breadth</div>
-    <div id="breadth-regime" style="text-align:center;padding:6px;background:var(--bg);border-radius:6px;margin-bottom:10px;font-size:.75rem;font-weight:700">—</div>
-    <div id="breadth-panel">
-      <div style="color:var(--muted);font-size:.72rem">Loading...</div>
-    </div>
-    <div style="margin-top:10px;font-size:.65rem;color:var(--muted)">🟢 above MA200 · 🔴 below</div>
+    <div class="section-title">👁 Watchlist</div>
+    <div id="watchlist" style="overflow-y:auto;flex:1;padding:4px 8px"><div style="padding:8px 4px;color:var(--muted);font-size:.78rem">Loading...</div></div>
   </div>
 
   </div><!-- end content-row -->
@@ -1024,55 +1010,7 @@ Quick starts:
   // Init
   loadPortfolio();
   loadWatchlist();
-  loadMarketBreadth();
   setInterval(() => { loadPortfolio(); loadWatchlist(); }, 60000);
-  setInterval(loadMarketBreadth, 300000); // refresh breadth every 5 min
-
-  // ── Market Breadth ──
-  async function loadMarketBreadth() {
-    try {
-      const res  = await fetch('/market-breadth');
-      const data = await res.json();
-      renderBreadth(data);
-    } catch(e) {}
-  }
-
-  function renderBreadth(data) {
-    const regime = data._regime || {};
-
-    // Header regime badge
-    const badge = document.getElementById('regime-badge');
-    if (badge) {
-      const colors = { BULL: ['#1a3d2a','#3fb950'], NEUTRAL: ['#3d3000','#d29922'], BEAR: ['#3d1a1a','#f85149'] };
-      const [bg, fg] = colors[regime.regime] || colors.NEUTRAL;
-      badge.style.cssText = `display:inline-block;background:${bg};color:${fg};padding:4px 10px;border-radius:20px;font-size:.72rem;font-weight:700`;
-      badge.textContent = `${regime.regime} · VIX ${regime.vix}`;
-    }
-
-    // Right panel regime box
-    const regimeEl = document.getElementById('breadth-regime');
-    if (regimeEl) {
-      const scoreColor = regime.score >= 70 ? 'var(--green)' : regime.score < 40 ? 'var(--red)' : 'var(--yellow)';
-      regimeEl.style.color = scoreColor;
-      regimeEl.innerHTML = `${regime.regime}<br><span style="font-size:.65rem;color:var(--muted);font-weight:400">${regime.vix_label} · ${regime.score}%</span>`;
-    }
-
-    // Right panel rows
-    const el = document.getElementById('breadth-panel');
-    if (!el) return;
-    const syms = ['SPY','QQQ','IWM','^VIX','HYG','TLT'];
-    el.innerHTML = syms.map(sym => {
-      const d = data[sym]; if (!d) return '';
-      const chgColor = d.day_change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-      const dot = d.above_ma200 === true ? '🟢' : d.above_ma200 === false ? '🔴' : '';
-      return `<div class="breadth-row">
-        <span class="breadth-ticker">${sym.replace('^','')}</span>
-        <span>$${d.price}</span>
-        <span style="color:${chgColor}">${d.day_change_pct > 0 ? '+' : ''}${d.day_change_pct}%</span>
-        <span>${dot}</span>
-      </div>`;
-    }).join('');
-  }
 
   // ── Position Sizer ──
   function openPositionSizer() {
