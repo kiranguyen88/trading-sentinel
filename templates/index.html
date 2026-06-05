@@ -32,6 +32,18 @@
     header h1 { font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; }
     header h1 span { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px; }
     #market-time { font-size: 0.78rem; color: var(--muted); }
+
+    /* ── SSE live indicator ── */
+    #sse-dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+               background:var(--green); margin-left:8px; vertical-align:middle;
+               box-shadow:0 0 4px var(--green); }
+    #sse-dot.offline { background:var(--red); box-shadow:0 0 4px var(--red); }
+
+    /* ── Price flash animation ── */
+    @keyframes price-flash-up   { 0%{background:#3fb95055} 100%{background:transparent} }
+    @keyframes price-flash-down { 0%{background:#f8514955} 100%{background:transparent} }
+    .flash-up   { animation: price-flash-up   0.6s ease-out; border-radius:3px; }
+    .flash-down { animation: price-flash-down 0.6s ease-out; border-radius:3px; }
     #digest-btn {
       background: var(--accent); color: #000; border: none; border-radius: 6px;
       padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600;
@@ -374,7 +386,7 @@
 
 <header>
   <h1>📡 Trading Sentinel <span>US Market · Short-Term</span></h1>
-  <span id="market-time">Loading...</span>
+  <span id="market-time">Loading...<span id="sse-dot" title="Live price feed"></span></span>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:var(--yellow);color:#000;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
@@ -600,17 +612,21 @@ Quick starts:
     el.innerHTML = holdings.map(h => {
       if (h.error) return `<div class="holding-card"><div class="ticker-name">${h.ticker||'?'}</div><div style="color:var(--red);font-size:.75rem">${h.error}</div></div>`;
 
-      const pnlClass = h.pnl_pct > 0 ? 'up' : h.pnl_pct < 0 ? 'down' : 'neutral';
-      const dayClass = h.day_change_pct > 0 ? 'up' : h.day_change_pct < 0 ? 'down' : 'neutral';
-      const dayDollar = (h.current_price || 0) * (h.day_change_pct || 0) / (100 + (h.day_change_pct || 0));
-      const daySign = (h.day_change_pct || 0) > 0 ? '+' : '';
+      const pnlPct   = h.pnl_pct || 0;
+      const chgPct   = h.day_change_pct || 0;
+      const pnlClass = pnlPct > 0 ? 'up' : pnlPct < 0 ? 'down' : 'neutral';
+      const dayClass = chgPct > 0 ? 'up' : chgPct < 0 ? 'down' : 'neutral';
+      const dayDollar = h.day_change_dollar != null
+        ? Math.abs(h.day_change_dollar)
+        : Math.abs((h.current_price || 0) * chgPct / (100 + chgPct));
+      const daySign = chgPct > 0 ? '+' : chgPct < 0 ? '-' : '';
       const dayStr = h.day_change_pct != null
-        ? `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${h.day_change_pct.toFixed(2)}%)`
+        ? `${daySign}$${dayDollar.toFixed(2)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`
         : '--';
 
-      const isProfitable = (h.pnl_pct || 0) >= 0;
+      const isProfitable = pnlPct >= 0;
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
-      const pnlSign     = (h.pnl_pct || 0) > 0 ? '+' : '';
+      const pnlSign     = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
 
       return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="card-row1">
@@ -622,7 +638,7 @@ Quick starts:
           <span class="card-day ${dayClass}" data-field="day">${dayStr}</span>
         </div>
         <div class="card-pnl-label">
-          <span class="${pnlClass}" data-field="pnl">${pnlSign}$${h.unrealized_pnl?.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${(h.pnl_pct||0).toFixed(1)}%)</span>
+          <span class="${pnlClass}" data-field="pnl">${pnlSign}$${Math.abs(h.unrealized_pnl||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${Math.abs(pnlPct).toFixed(1)}%)</span>
         </div>
       </div>`;
     }).join('');
@@ -1160,27 +1176,56 @@ Quick starts:
     return (n||0).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
   }
 
+  function _flash(el, dir) {
+    if (!el) return;
+    el.classList.remove('flash-up', 'flash-down');
+    void el.offsetWidth; // reflow to restart animation
+    el.classList.add(dir > 0 ? 'flash-up' : 'flash-down');
+  }
+
   function applyPriceUpdate(prices) {
+    let portfolioUpdated = false;
     prices.forEach(p => {
-      const daySign  = (p.day_change_pct||0) > 0 ? '+' : '';
-      const dayClass = (p.day_change_pct||0) > 0 ? 'up' : (p.day_change_pct||0) < 0 ? 'down' : 'neutral';
+      const chgPct   = p.day_change_pct || 0;
+      const daySign  = chgPct > 0 ? '+' : chgPct < 0 ? '-' : '';
+      const dayClass = chgPct > 0 ? 'up' : chgPct < 0 ? 'down' : 'neutral';
+      // Use server-supplied dollar change if available, else calculate
+      const dayDollar = p.day_change_dollar != null
+        ? Math.abs(p.day_change_dollar)
+        : Math.abs((p.current_price||0) * chgPct / (100 + chgPct));
 
       // ── Portfolio holding cards ──
       const card = document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
       if (card) {
-        const isProfitable = (p.pnl_pct || 0) >= 0;
-        const pnlSign  = (p.pnl_pct||0) > 0 ? '+' : '';
-        const pnlClass = (p.pnl_pct||0) > 0 ? 'up' : (p.pnl_pct||0) < 0 ? 'down' : 'neutral';
-        const dayDollar = (p.current_price||0) * (p.day_change_pct||0) / (100 + (p.day_change_pct||0));
-        const dayStr = `${daySign}$${Math.abs(dayDollar).toFixed(2)} (${daySign}${(p.day_change_pct||0).toFixed(2)}%)`;
-        const priceEl = card.querySelector('[data-field="price"]');
-        const dayEl   = card.querySelector('[data-field="day"]');
-        const pnlEl   = card.querySelector('[data-field="pnl"]');
-        if (priceEl) priceEl.textContent = `$${_fmt(p.current_price)}`;
-        if (dayEl)   { dayEl.textContent = dayStr; dayEl.className = `card-day ${dayClass}`; }
-        if (pnlEl)   { pnlEl.textContent = `${pnlSign}$${_fmt(p.unrealized_pnl,0)} (${pnlSign}${(p.pnl_pct||0).toFixed(1)}%)`; pnlEl.className = pnlClass; }
-        card.classList.toggle('card-profit', isProfitable);
-        card.classList.toggle('card-loss',  !isProfitable);
+        const pnlPct   = p.pnl_pct || 0;
+        const pnlSign  = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
+        const pnlClass = pnlPct > 0 ? 'up' : pnlPct < 0 ? 'down' : 'neutral';
+        const dayStr   = `${daySign}$${dayDollar.toFixed(2)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`;
+        const pnlStr   = `${pnlSign}$${_fmt(Math.abs(p.unrealized_pnl||0),0)} (${pnlSign}${Math.abs(pnlPct).toFixed(1)}%)`;
+        const priceEl  = card.querySelector('[data-field="price"]');
+        const dayEl    = card.querySelector('[data-field="day"]');
+        const pnlEl    = card.querySelector('[data-field="pnl"]');
+        if (priceEl) {
+          const prev = priceEl.textContent;
+          priceEl.textContent = `$${_fmt(p.current_price)}`;
+          if (prev !== priceEl.textContent) _flash(priceEl, chgPct);
+        }
+        if (dayEl) { dayEl.textContent = dayStr; dayEl.className = `card-day ${dayClass}`; }
+        if (pnlEl) { pnlEl.textContent = pnlStr; pnlEl.className = pnlClass; }
+        card.classList.toggle('card-profit', pnlPct >= 0);
+        card.classList.toggle('card-loss',  pnlPct < 0);
+
+        // Keep _lastPortfolio in sync so charts stay current
+        if (_lastPortfolio) {
+          const h = _lastPortfolio.find(h => h.ticker === p.ticker);
+          if (h) {
+            h.current_price  = p.current_price;
+            h.day_change_pct = p.day_change_pct;
+            h.unrealized_pnl = p.unrealized_pnl;
+            h.pnl_pct        = p.pnl_pct;
+            portfolioUpdated = true;
+          }
+        }
       }
 
       // ── Watchlist sidebar rows ──
@@ -1188,26 +1233,41 @@ Quick starts:
       if (wlRow) {
         const priceEl = wlRow.querySelector('[data-wl="price"]');
         const chgEl   = wlRow.querySelector('[data-wl="chg"]');
-        if (priceEl) priceEl.textContent = '$' + _fmt(p.current_price);
+        if (priceEl) {
+          const prev = priceEl.textContent;
+          priceEl.textContent = '$' + _fmt(p.current_price);
+          if (prev !== priceEl.textContent) _flash(priceEl, chgPct);
+        }
         if (chgEl) {
-          chgEl.textContent = `${daySign}${(p.day_change_pct||0).toFixed(2)}%`;
+          chgEl.textContent = `${daySign}${Math.abs(chgPct).toFixed(2)}%`;
           chgEl.className = dayClass;
           chgEl.style.cssText = 'font-size:.7rem;width:60px;text-align:right;flex-shrink:0;white-space:nowrap';
         }
       }
     });
+
+    // Refresh charts if any portfolio price changed
+    if (portfolioUpdated && _lastPortfolio) renderCharts(_lastPortfolio);
   }
 
-  let _sse = null;
+  function _setSseDot(online) {
+    const dot = document.getElementById('sse-dot');
+    if (dot) dot.className = online ? '' : 'offline';
+  }
+
+  let _sse = null, _sseRetryMs = 1000;
   function startPriceStream() {
     if (_sse) { try { _sse.close(); } catch(_) {} }
     _sse = new EventSource('/api/stream/prices');
+    _sse.onopen = () => { _setSseDot(true); _sseRetryMs = 1000; };
     _sse.onmessage = e => {
       try { const d = JSON.parse(e.data); if (Array.isArray(d)) applyPriceUpdate(d); } catch(_) {}
     };
     _sse.onerror = () => {
       _sse.close();
-      setTimeout(startPriceStream, 30000);   // reconnect after 30 s
+      _setSseDot(false);
+      setTimeout(startPriceStream, _sseRetryMs);
+      _sseRetryMs = Math.min(_sseRetryMs * 2, 30000);
     };
   }
 

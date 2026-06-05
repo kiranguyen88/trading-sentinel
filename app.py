@@ -108,32 +108,33 @@ def _fetch_live_prices() -> list:
             try:
                 s = closes[t].dropna() if t in closes.columns else closes.iloc[:, 0].dropna()
                 if s.empty:
-                    return None, None
+                    return None, None, None
                 current    = float(s.iloc[-1])
                 today      = s.index[-1].normalize()
                 prev_s     = s[s.index.normalize() < today]
                 prev_close = float(prev_s.iloc[-1]) if not prev_s.empty else current
                 day_pct    = round((current - prev_close) / prev_close * 100, 2) if prev_close else 0
-                return current, day_pct
+                return current, day_pct, prev_close
             except Exception as e:
                 print(f"[LivePrice] {t}: {e}")
-                return None, None
+                return None, None, None
 
         results = []
 
         # ── Portfolio holdings (include PnL fields) ──
         for h in holdings:
             t = h["ticker"]
-            current, day_pct = _price_and_chg(t)
+            current, day_pct, prev_close = _price_and_chg(t)
             if current is None:
                 continue
             payload = {
-                "type":          "portfolio",
-                "ticker":        t,
-                "current_price": round(current, 2),
-                "day_change_pct":day_pct,
-                "unrealized_pnl":round((current - h["avg_buy_price"]) * h["quantity"], 2),
-                "pnl_pct":       round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
+                "type":             "portfolio",
+                "ticker":           t,
+                "current_price":    round(current, 2),
+                "day_change_pct":   day_pct,
+                "day_change_dollar":round(current - prev_close, 2),
+                "unrealized_pnl":   round((current - h["avg_buy_price"]) * h["quantity"], 2),
+                "pnl_pct":          round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
             }
             results.append(payload)
             _fast_prices[t] = payload
@@ -142,14 +143,15 @@ def _fetch_live_prices() -> list:
         for t in wl_tickers:
             if t in holding_set:
                 continue   # already handled above
-            current, day_pct = _price_and_chg(t)
+            current, day_pct, prev_close = _price_and_chg(t)
             if current is None:
                 continue
             payload = {
-                "type":          "watchlist",
-                "ticker":        t,
-                "current_price": round(current, 2),
-                "day_change_pct":day_pct,
+                "type":             "watchlist",
+                "ticker":           t,
+                "current_price":    round(current, 2),
+                "day_change_pct":   day_pct,
+                "day_change_dollar":round(current - prev_close, 2),
             }
             results.append(payload)
             _fast_prices[t] = payload
@@ -162,13 +164,15 @@ def _fetch_live_prices() -> list:
 def _price_worker():
     import time
     while True:
+        ok = False
         try:
             prices = _fetch_live_prices()
             if prices:
                 _push_prices(json.dumps(prices))
+                ok = True
         except Exception as e:
             print(f"[PriceWorker] {e}")
-        time.sleep(15)
+        time.sleep(15 if ok else 5)
 
 _threading.Thread(target=_price_worker, daemon=True, name="price-worker").start()
 
