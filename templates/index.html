@@ -873,9 +873,12 @@ Quick starts:
   async function loadWatchlist() {
     try {
       const res = await fetch('/watchlist');
+      if (!res.ok) throw new Error(res.status);
       const data = await res.json();
       renderWatchlist(data);
-    } catch(e) {}
+    } catch(e) {
+      document.getElementById('watchlist').innerHTML = '<div style="padding:8px 12px;color:var(--red);font-size:.75rem">Failed to load watchlist</div>';
+    }
   }
 
   function renderWatchlist(items) {
@@ -884,7 +887,7 @@ Quick starts:
       el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">No watchlist tickers</div>';
       return;
     }
-    el.innerHTML = items.map(s => {
+    el.innerHTML = items.filter(Boolean).map(s => {
       if (s.error) return `<div class="holding-card"><span class="ticker-name">${s.ticker||'?'}</span> <span style="color:var(--red);font-size:.7rem">${s.error}</span></div>`;
       const dayClass = s.day_change_pct > 0 ? 'up' : s.day_change_pct < 0 ? 'down' : 'neutral';
       const rsi = s.rsi_14;

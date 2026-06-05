@@ -191,8 +191,11 @@ def portfolio():
 
 @app.route("/watchlist")
 def watchlist():
-    snapshot = get_watchlist_snapshot()
-    return jsonify(snapshot)
+    try:
+        snapshot = get_watchlist_snapshot()
+        return jsonify(snapshot)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/daily-digest", methods=["POST"])
