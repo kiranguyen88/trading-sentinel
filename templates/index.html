@@ -447,12 +447,6 @@
       <button class="add-row-btn" onclick="addHoldingRow()">+ Add holding</button>
     </div>
 
-    <div class="modal-section">
-      <h3>WhatsApp Numbers (all receive alerts)</h3>
-      <div id="modal-whatsapp-list"></div>
-      <button class="add-row-btn" onclick="addWhatsappRow()" style="margin-top:6px">+ Add WhatsApp number</button>
-    </div>
-
     <div class="modal-actions">
       <span class="save-status" id="save-status"></span>
       <button class="btn-cancel" onclick="copyPortfolioJson(this)" style="background:none;border:1px solid var(--border);color:var(--muted)">📋 Copy JSON</button>
@@ -529,7 +523,7 @@
       <div class="msg assistant">
         <div class="bubble">👋 <strong>Trading Sentinel online.</strong>
 
-I'm monitoring your US portfolio in real-time. I'll warn you of key signals and send urgent alerts to your WhatsApp.
+I'm monitoring your US portfolio in real-time. I'll warn you of key signals and send urgent alerts to your Discord.
 
 Ask me anything — or click <strong>Daily Digest</strong> for a full portfolio review.
 
@@ -592,7 +586,7 @@ Quick starts:
 <div id="tab-actions-sheet" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:flex-end" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:var(--surface);border-radius:16px 16px 0 0;padding:20px;width:100%;display:flex;flex-direction:column;gap:10px">
     <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Quick Actions</div>
-    <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest + WhatsApp</button>
+    <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest</button>
     <button onclick="triggerCheckNow();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:var(--yellow);color:#000;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">⚡ Check Warnings Now</button>
     <button onclick="triggerSuggestWatchlist();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:#6e40c9;color:#fff;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">🔍 Auto-Suggest Watchlist</button>
     <button onclick="document.getElementById('tab-actions-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
@@ -880,7 +874,7 @@ Quick starts:
       get_stock_data:       '📊 Fetching market data...',
       get_portfolio_snapshot: '💼 Loading portfolio...',
       get_market_news:      '📰 Scanning news...',
-      send_whatsapp_alert:  '📱 Sending WhatsApp alert...',
+      send_discord_alert:   '📱 Sending Discord alert...',
     };
     return labels[name] || `🔧 ${name}`;
   }
@@ -965,13 +959,13 @@ Quick starts:
     try {
       const res = await fetch('/daily-digest', { method: 'POST' });
       const data = await res.json();
-      appendMessage('assistant', '📊 Daily Digest sent to WhatsApp!\n\n' + data.message);
+      appendMessage('assistant', '📊 Daily Digest sent to Discord!\n\n' + data.message);
       scrollToBottom();
     } catch(e) {
       appendMessage('assistant', '⚠️ Failed to generate digest.');
     }
     btn.disabled = false;
-    btn.textContent = '📊 Daily Digest + WhatsApp';
+    btn.textContent = '📊 Daily Digest';
   }
 
   // ── Watchlist sidebar ──
@@ -1051,10 +1045,6 @@ Quick starts:
     const container = document.getElementById('modal-holdings');
     container.innerHTML = '';
     (_portfolioData.holdings || []).forEach(h => addHoldingRow(h));
-    const waList = document.getElementById('modal-whatsapp-list');
-    waList.innerHTML = '';
-    const numbers = _portfolioData.whatsapp_numbers || (_portfolioData.whatsapp_number ? [_portfolioData.whatsapp_number] : []);
-    numbers.forEach(n => addWhatsappRow(n));
     document.getElementById('save-status').textContent = '';
     document.getElementById('portfolio-modal').classList.add('open');
   }
@@ -1087,18 +1077,6 @@ Quick starts:
     btn.textContent = '✓ Copied!';
     btn.style.color = 'var(--green)';
     setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
-  }
-
-  function addWhatsappRow(number = '') {
-    const container = document.getElementById('modal-whatsapp-list');
-    const row = document.createElement('div');
-    row.className = 'holding-row';
-    row.innerHTML = `
-      <input type="text" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.82rem;outline:none;"
-             placeholder="whatsapp:+84xxxxxxxxx" value="${number}" class="wa-number-input">
-      <button class="del-btn" onclick="this.parentElement.remove()" title="Remove">✕</button>
-    `;
-    container.appendChild(row);
   }
 
   function addHoldingRow(h = {}) {
@@ -1153,13 +1131,9 @@ Quick starts:
         holdings.push({ ticker, quantity: qty, avg_buy_price: price });
       }
     }
-    const whatsapp_numbers = [...document.querySelectorAll('.wa-number-input')]
-      .map(i => i.value.trim()).filter(Boolean);
     const payload = {
       holdings,
       watchlist: _portfolioData.watchlist || [],
-      whatsapp_numbers,
-      whatsapp_number: whatsapp_numbers[0] || ''
     };
     const statusEl = document.getElementById('save-status');
     statusEl.textContent = 'Saving...';
@@ -1193,12 +1167,9 @@ Quick starts:
       const notes = row.querySelector('.wl-notes').value.trim();
       watchlist.push({ ticker, entry, stop, notes });
     }
-    const waNums = _portfolioData.whatsapp_numbers || (_portfolioData.whatsapp_number ? [_portfolioData.whatsapp_number] : []);
     const payload = {
       holdings: _portfolioData.holdings || [],
       watchlist,
-      whatsapp_numbers: waNums,
-      whatsapp_number: waNums[0] || ''
     };
     const statusEl = document.getElementById('save-status-wl');
     statusEl.textContent = 'Saving...';

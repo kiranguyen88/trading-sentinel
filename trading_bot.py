@@ -10,7 +10,6 @@ import requests
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from twilio.rest import Client as TwilioClient
 
 load_dotenv()
 
@@ -37,12 +36,6 @@ gemini_client = genai.Client(
     http_options={"api_version": "v1alpha"},
 )
 
-twilio_client = TwilioClient(
-    os.getenv("TWILIO_ACCOUNT_SID"),
-    os.getenv("TWILIO_AUTH_TOKEN"),
-)
-TWILIO_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
-
 
 # ---------------------------------------------------------------------------
 # Portfolio helpers
@@ -57,13 +50,12 @@ def load_portfolio() -> dict:
         try:
             with open(_PORTFOLIO_PATH) as f:
                 data = json.load(f)
-            # If this has real customisation (non-null watchlist entries or
-            # whatsapp numbers), trust it over the env-var snapshot.
+            # If this has real customisation (non-null watchlist entries), trust it over the env-var snapshot.
             wl = data.get("watchlist", [])
             has_custom = any(
                 isinstance(w, dict) and (w.get("entry") or w.get("stop") or w.get("notes"))
                 for w in wl
-            ) or bool(data.get("whatsapp_numbers") or data.get("whatsapp_number"))
+            )
             if has_custom:
                 return data
         except Exception:
@@ -89,15 +81,6 @@ def save_portfolio(data: dict) -> None:
         os.makedirs(dir_, exist_ok=True)
     with open(_PORTFOLIO_PATH, "w") as f:
         json.dump(data, f, indent=2)
-
-def get_whatsapp_numbers() -> list[str]:
-    p = load_portfolio()
-    # Support both old single number and new list
-    numbers = p.get("whatsapp_numbers", [])
-    if not numbers:
-        single = p.get("whatsapp_number", "")
-        numbers = [single] if single else []
-    return [n for n in numbers if n]
 
 
 # ---------------------------------------------------------------------------
@@ -300,21 +283,30 @@ def get_all_tickers_report() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp
+# Discord alerts
 # ---------------------------------------------------------------------------
 
-def send_whatsapp(message: str, to: str | None = None) -> bool:
-    targets = [to] if to else get_whatsapp_numbers()
-    if not targets:
+_DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
+
+def send_discord(message: str) -> bool:
+    if not _DISCORD_WEBHOOK:
         return False
-    success = False
-    for number in targets:
-        try:
-            twilio_client.messages.create(body=message, from_=TWILIO_FROM, to=number)
-            success = True
-        except Exception as e:
-            print(f"[WhatsApp error] {number}: {e}")
-    return success
+    # Convert *text* bold markers to Discord **text** format
+    discord_msg = message.replace("*", "**")
+    # Discord limit: 2000 chars per message
+    chunks = [discord_msg[i:i+1990] for i in range(0, len(discord_msg), 1990)]
+    try:
+        for chunk in chunks:
+            resp = requests.post(_DISCORD_WEBHOOK, json={"content": chunk}, timeout=10)
+            resp.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"[Discord error] {e}")
+        return False
+
+
+def send_alert(message: str) -> bool:
+    return send_discord(message)
 
 
 # ---------------------------------------------------------------------------
@@ -345,9 +337,9 @@ def _get_market_news_tool(query: str, max_articles: int = 6) -> list:
     """Fetch latest news headlines from Yahoo Finance for a ticker or topic."""
     return get_market_news(query, max_articles)
 
-def _send_whatsapp_alert_tool(message: str) -> dict:
-    """Send an urgent alert to the trader's WhatsApp when warning conditions are detected."""
-    return {"sent": send_whatsapp(message), "message": message}
+def _send_discord_alert_tool(message: str) -> dict:
+    """Send an urgent alert to the trader via Discord when warning conditions are detected."""
+    return {"sent": send_alert(message), "message": message}
 
 GEMINI_TOOLS = [
     _get_stock_data_tool,
@@ -356,7 +348,7 @@ GEMINI_TOOLS = [
     _get_ticker_full_report_tool,
     _get_all_tickers_report_tool,
     _get_market_news_tool,
-    _send_whatsapp_alert_tool,
+    _send_discord_alert_tool,
 ]
 
 
@@ -557,8 +549,8 @@ def _run_tool(name: str, args: dict) -> str:
         raw = get_all_tickers_report()
     elif name in ("_get_market_news_tool",        "get_market_news"):
         raw = get_market_news(args.get("query",""), args.get("max_articles",6))
-    elif name in ("_send_whatsapp_alert_tool",    "send_whatsapp_alert"):
-        raw = {"sent": send_whatsapp(args.get("message","")), "message": args.get("message","")}
+    elif name in ("_send_discord_alert_tool", "send_discord_alert"):
+        raw = {"sent": send_alert(args.get("message", "")), "message": args.get("message", "")}
     else:
         raw = {"error": f"Unknown tool: {name}"}
     return json.dumps(raw, default=str)
@@ -659,7 +651,7 @@ def _chat_stream_inner(user_message: str, history: list[dict]):
 # ---------------------------------------------------------------------------
 
 def run_daily_digest() -> str:
-    """Quick rule-based digest for WhatsApp — no AI call, just raw signals."""
+    """Quick rule-based digest — no AI call, just raw signals. Sends via Discord."""
     snapshot  = get_portfolio_snapshot()
     watchlist = get_watchlist_snapshot()
     lines     = []
@@ -703,5 +695,5 @@ def run_daily_digest() -> str:
         lines.append(f"  {ticker} ${price:,.2f} ({chg:+.1f}%){sig_txt}")
 
     msg = "\n".join(lines)
-    send_whatsapp(msg)
+    send_alert(msg)
     return msg

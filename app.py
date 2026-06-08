@@ -14,7 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
-    run_daily_digest, load_portfolio, save_portfolio, send_whatsapp, get_stock_data, get_market_news,
+    run_daily_digest, load_portfolio, save_portfolio, send_alert, get_stock_data, get_market_news,
     get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
 )
 from screener import ai_suggest_watchlist
@@ -180,7 +180,7 @@ _threading.Thread(target=_price_worker, daemon=True, name="price-worker").start(
 _sent_alerts: set = set()
 
 def auto_scan_watchlist():
-    """Scan current watchlist tickers and send technical signals to WhatsApp."""
+    """Scan current watchlist tickers and send technical signals via Discord."""
     try:
         snapshot = get_watchlist_snapshot()
         if not snapshot:
@@ -211,7 +211,7 @@ def auto_scan_watchlist():
             chg_sym = "+" if chg >= 0 else ""
             lines.append(f"*{ticker}* ${price:,.2f} ({chg_sym}{chg:.2f}%) — {sig_txt}")
 
-        send_whatsapp("\n".join(lines))
+        send_alert("\n".join(lines))
         print(f"[Watchlist Scan] Sent for {len(snapshot)} tickers.")
     except Exception as e:
         print(f"[Watchlist Scan] Error: {e}")
@@ -227,16 +227,15 @@ def _alert_key(ticker: str, alert_type: str) -> str:
 # Immediate warning monitor — runs every 15 min (24/7); self-gates on ET market hours 9:30–16:00
 # ---------------------------------------------------------------------------
 
-def check_warnings():
-    """Scan all holdings and fire WhatsApp alerts for warning conditions."""
-    now_et = datetime.now(_ET)   # always ET regardless of scheduler timezone
-    hour, minute = now_et.hour, now_et.minute
-
-    # Only during US market hours 9:30–16:00
-    market_open  = (hour > 9) or (hour == 9 and minute >= 30)
-    market_close = hour < 16
-    if not (market_open and market_close):
-        return
+def check_warnings(force: bool = False):
+    """Scan all holdings and fire Discord alerts for warning conditions."""
+    if not force:
+        now_et = datetime.now(_ET)
+        hour, minute = now_et.hour, now_et.minute
+        market_open  = (hour > 9) or (hour == 9 and minute >= 30)
+        market_close = hour < 16
+        if not (market_open and market_close):
+            return
 
     snapshot = get_portfolio_snapshot()
     alerts = []
@@ -289,7 +288,7 @@ def check_warnings():
             send_once("vol_spike", f"📊 *{ticker}* Volume Spike ×{vol['ratio']:.1f}\nPrice: ${price:,.2f} | Unusual activity — check for news")
 
     for msg in alerts:
-        send_whatsapp(msg)
+        send_alert(msg)
 
     if alerts:
         print(f"[Monitor] {len(alerts)} alert(s) sent at {datetime.now(_GMT7).strftime('%H:%M GMT+7')}")
@@ -424,8 +423,8 @@ def suggest_watchlist():
 def check_now():
     """Manually trigger an immediate warning check."""
     _sent_alerts.clear()   # clear cooldowns so all current warnings fire
-    check_warnings()
-    return jsonify({"message": "Warning check complete. Alerts sent to WhatsApp if any found."})
+    check_warnings(force=True)
+    return jsonify({"message": "Warning check complete. Alerts sent to Discord if any found."})
 
 
 @app.route("/portfolio-data")
@@ -439,8 +438,6 @@ def portfolio_update():
     portfolio = load_portfolio()
     portfolio["holdings"]         = data.get("holdings", portfolio.get("holdings", []))
     portfolio["watchlist"]        = data.get("watchlist", portfolio.get("watchlist", []))
-    portfolio["whatsapp_number"]  = data.get("whatsapp_number", portfolio.get("whatsapp_number", ""))
-    portfolio["whatsapp_numbers"] = data.get("whatsapp_numbers", portfolio.get("whatsapp_numbers", []))
     save_portfolio(portfolio)
     return jsonify({"ok": True})
 
