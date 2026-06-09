@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Trading Sentinel</title>
+  <link rel="icon" type="image/png" href="/static/logo.png" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -29,7 +30,8 @@
       padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
-    header h1 { font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; }
+    header h1 { font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+    header h1 img { height: 32px; width: 32px; object-fit: contain; }
     header h1 span { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px; }
     #market-time { font-size: 0.78rem; color: var(--muted); }
 
@@ -427,7 +429,7 @@
 <body>
 
 <header>
-  <h1>📡 Trading Sentinel <span>US Market · Short-Term</span></h1>
+  <h1><img src="/static/logo.png" alt="Logo" /> Trading Sentinel <span>US Market · Short-Term</span></h1>
   <span id="market-time">Loading...<span id="sse-dot" title="Live price feed"></span></span>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
