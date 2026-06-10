@@ -649,7 +649,10 @@ Quick starts:
       }
     } catch(e) {
       if (_lastPortfolio) { renderPortfolio(_lastPortfolio); _showStale('holdings'); }
-      else document.getElementById('holdings').innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.78rem">Retrying...</div>';
+      else {
+        document.getElementById('holdings').innerHTML = '<div style="padding:12px;color:var(--muted);font-size:.78rem">⟳ Retrying...</div>';
+        setTimeout(loadPortfolio, 15000);
+      }
     }
     setTimeout(()=>document.getElementById('refresh-btn').style.transform='',500);
   }
@@ -664,7 +667,16 @@ Quick starts:
     if (!holdings || holdings.length === 0) { el.innerHTML = '<div style="padding:12px;color:var(--muted)">No holdings</div>'; return; }
 
     el.innerHTML = holdings.map(h => {
-      if (h.error) return `<div class="holding-card"><div class="ticker-name">${h.ticker||'?'}</div><div style="color:var(--red);font-size:.75rem">${h.error}</div></div>`;
+      if (h.error) return `<div class="holding-card card-loss" data-ticker="${h.ticker||'?'}">
+        <div class="card-row1">
+          <span class="card-ticker">${h.ticker||'?'}<span class="card-shares">${h.quantity||''}sh</span></span>
+          <span class="card-price" style="color:var(--muted)">N/A</span>
+        </div>
+        <div class="card-row2">
+          <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})||'—'}</span>
+          <span style="color:var(--muted);font-size:.7rem">price unavailable</span>
+        </div>
+      </div>`;
 
       const pnlPct   = h.pnl_pct || 0;
       const chgPct   = h.day_change_pct || 0;
@@ -999,6 +1011,7 @@ Quick starts:
         _showStale('watchlist');
       } else {
         el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">⚠️ Could not load watchlist — <a href="#" style="color:var(--accent)" onclick="loadWatchlist();return false">retry</a></div>';
+        setTimeout(loadWatchlist, 15000);
       }
     }
   }

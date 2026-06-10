@@ -16,6 +16,7 @@ from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
     run_daily_digest, load_portfolio, save_portfolio, send_alert, get_stock_data, get_market_news,
     get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
+    _yf_session,
 )
 from screener import ai_suggest_watchlist
 
@@ -98,6 +99,7 @@ def _fetch_live_prices() -> list:
             " ".join(all_tickers),
             period="5d", interval="1m",
             progress=False, auto_adjust=True,
+            session=_yf_session,
         )
         # Normalise: single ticker → DataFrame with one column level
         closes = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=1)
@@ -313,7 +315,7 @@ scheduler.add_job(
     id="warning_monitor"
 )
 
-# After-close summary — 3:05 AM VN time (≈ 4:05 PM ET)
+# After-close summary -- 3:05 AM VN time (~4:05 PM ET)
 scheduler.add_job(
     run_daily_digest, "cron",
     day_of_week="tue-sat", hour=3, minute=5,
@@ -331,7 +333,7 @@ scheduler.start()
 print("Scheduler started (Asia/Ho_Chi_Minh):")
 print("  Daily digest    -> 6:00 PM VN (Mon-Fri)")
 print("  Warning monitor -> Every 1 hour (self-gates on ET market hours)")
-print("  Close summary   -> 3:05 AM VN (Tue-Sat ≈ after US close)")
+print("  Close summary   -> 3:05 AM VN (Tue-Sat ~ after US close)")
 print("  Watchlist scan  -> 5:55 PM VN (Mon-Fri)")
 
 

@@ -7,11 +7,29 @@ _GMT7 = timezone(timedelta(hours=7))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yfinance as yf
 import requests
+from requests.adapters import HTTPAdapter
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
 load_dotenv()
+
+# Browser-like session with per-request timeout — prevents Yahoo Finance IP blocking
+# and stops threads from hanging indefinitely (which causes OOM on Railway).
+class _TimeoutHTTPAdapter(HTTPAdapter):
+    def send(self, *args, **kwargs):
+        kwargs.setdefault("timeout", 10)
+        return super().send(*args, **kwargs)
+
+_yf_session = requests.Session()
+_yf_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+})
+_yf_session.mount("https://", _TimeoutHTTPAdapter())
+_yf_session.mount("http://", _TimeoutHTTPAdapter())
+
 
 def _clean_floats(obj):
     """Recursively replace NaN/Inf floats with None so jsonify never emits invalid JSON."""
@@ -89,11 +107,11 @@ def save_portfolio(data: dict) -> None:
 
 def get_stock_data(ticker: str, period: str = "3mo") -> dict:
     try:
-        tk = yf.Ticker(ticker)
+        tk = yf.Ticker(ticker, session=_yf_session)
         hist = tk.history(period=period)
         hist = hist.dropna(subset=["Close"])   # drop incomplete trailing row (market closed)
         if hist.empty:
-            return {"error": f"No data for {ticker}"}
+            return {"error": f"No data for {ticker}", "ticker": ticker}
 
         close = hist["Close"]
         current_price  = float(close.iloc[-1])
@@ -188,9 +206,12 @@ def get_portfolio_snapshot() -> list:
             data["position_value"] = round(data["current_price"] * h["quantity"], 2)
             data["unrealized_pnl"] = round((data["current_price"] - h["avg_buy_price"]) * h["quantity"], 2)
             data["pnl_pct"]        = round((data["current_price"] - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2)
+        else:
+            # yfinance failed — include static data so the UI shows something instead of loading forever
+            data.update({"ticker": h["ticker"], "quantity": h["quantity"], "avg_buy_price": h["avg_buy_price"]})
         return data
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {ex.submit(fetch, h): i for i, h in enumerate(holdings)}
         results = [None] * len(holdings)
         for future in as_completed(futures):
@@ -207,7 +228,7 @@ def get_watchlist_snapshot() -> list:
     watchlist = load_portfolio().get("watchlist", [])
     if not watchlist:
         return []
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {ex.submit(get_stock_data, _wl_ticker(item), "1mo"): (i, item)
                    for i, item in enumerate(watchlist)}
         results = [None] * len(watchlist)
@@ -219,6 +240,10 @@ def get_watchlist_snapshot() -> list:
                 data["stop_target"]  = item.get("stop")
                 data["notes"]        = item.get("notes", "")
             results[idx] = data
+    # Fill any slots that never completed (shouldn't happen, but guard just in case)
+    for i, item in enumerate(watchlist):
+        if results[i] is None:
+            results[i] = {"error": "Data unavailable", "ticker": _wl_ticker(item)}
     return results
 
 
