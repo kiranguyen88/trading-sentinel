@@ -1,0 +1,18 @@
+name: Hourly Warnings Check
+
+on:
+  schedule:
+    # Every hour Mon–Fri, 13:00–21:00 UTC = 9 AM–5 PM ET (US market hours)
+    - cron: "0 13-21 * * 1-5"
+  workflow_dispatch: # allow manual trigger from GitHub Actions tab
+
+jobs:
+  check-warnings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger check-warnings
+        run: |
+          curl -sf "${{ secrets.APP_URL }}/cron/check-warnings" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            --max-time 60 \
+            || echo "Request failed (non-fatal)"

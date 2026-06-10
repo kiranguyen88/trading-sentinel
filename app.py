@@ -456,27 +456,43 @@ def journal_delete(entry_id):
 # Vercel Cron routes — GET requests fired by Vercel's scheduler (UTC times)
 #   /cron/daily-digest   → "0 11 * * 1-5"   = 6 PM VN Mon–Fri
 #   /cron/close-summary  → "5 20 * * 1-5"   = 3:05 AM VN Tue–Sat
-#   /cron/check-warnings → "0 * * * *"      = every hour
+#   /cron/check-warnings → called hourly by GitHub Actions (Mon–Fri 13–21 UTC)
 #   /cron/watchlist-scan → "55 10 * * 1-5"  = 5:55 PM VN Mon–Fri
 # ---------------------------------------------------------------------------
 
+_CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
+def _verify_cron():
+    """Return 401 response if CRON_SECRET is set and header doesn't match."""
+    if _CRON_SECRET and request.headers.get("x-cron-secret") != _CRON_SECRET:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    return None
+
 @app.route("/cron/daily-digest")
 def cron_daily_digest():
+    err = _verify_cron()
+    if err: return err
     msg = run_daily_digest()
     return jsonify({"ok": True, "message": msg})
 
 @app.route("/cron/close-summary")
 def cron_close_summary():
+    err = _verify_cron()
+    if err: return err
     msg = run_daily_digest()
     return jsonify({"ok": True, "message": msg})
 
 @app.route("/cron/check-warnings")
 def cron_check_warnings():
+    err = _verify_cron()
+    if err: return err
     check_warnings()
     return jsonify({"ok": True})
 
 @app.route("/cron/watchlist-scan")
 def cron_watchlist_scan():
+    err = _verify_cron()
+    if err: return err
     auto_scan_watchlist()
     return jsonify({"ok": True})
 
