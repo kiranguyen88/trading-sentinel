@@ -3,3 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+.vercel
+
+# Local session artifacts (browser snapshots, verification screenshots)
+.playwright-mcp/
+/*.png
