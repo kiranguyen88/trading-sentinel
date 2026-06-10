@@ -463,10 +463,19 @@ def journal_delete(entry_id):
 _CRON_SECRET = os.environ.get("CRON_SECRET", "")
 
 def _verify_cron():
-    """Return 401 response if CRON_SECRET is set and header doesn't match."""
-    if _CRON_SECRET and request.headers.get("x-cron-secret") != _CRON_SECRET:
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
-    return None
+    """Return 401 response if CRON_SECRET is set and the request isn't authenticated.
+
+    Accepts either auth form:
+      - x-cron-secret: <secret>            (GitHub Actions workflow)
+      - Authorization: Bearer <secret>     (Vercel cron scheduler)
+    """
+    if not _CRON_SECRET:
+        return None
+    if request.headers.get("x-cron-secret") == _CRON_SECRET:
+        return None
+    if request.headers.get("Authorization") == f"Bearer {_CRON_SECRET}":
+        return None
+    return jsonify({"ok": False, "error": "unauthorized"}), 401
 
 @app.route("/cron/daily-digest")
 def cron_daily_digest():
