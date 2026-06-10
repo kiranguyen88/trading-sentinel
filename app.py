@@ -1,16 +1,14 @@
 import os
 import json
-import queue as _queue
-import threading as _threading
+import time as _time
 import pandas as _pd
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-_ET = ZoneInfo("America/New_York")
-
+_ET   = ZoneInfo("America/New_York")
 _GMT7 = timezone(timedelta(hours=7))
+
 from flask import Flask, render_template, request, Response, jsonify
-from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
@@ -19,6 +17,7 @@ from trading_bot import (
     _yf_session,
 )
 from screener import ai_suggest_watchlist
+import yfinance as _yf
 
 load_dotenv()
 
@@ -27,11 +26,9 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 # Simple TTL cache — prevents hammering yfinance on every 60-second refresh
 # ---------------------------------------------------------------------------
-import time as _time
-
-_cache: dict = {}          # key → {"data": ..., "ts": float}
-_CACHE_TTL  = 120          # seconds before a fresh fetch is attempted
-_CACHE_HARD = 600          # seconds before stale data is considered too old
+_cache: dict = {}
+_CACHE_TTL  = 120   # seconds before a fresh fetch is attempted
+_CACHE_HARD = 600   # seconds before stale data is considered too old
 
 def _cache_get(key):
     """Return (data, is_stale). data=None if nothing cached."""
@@ -39,7 +36,7 @@ def _cache_get(key):
     if not entry:
         return None, False
     age = _time.time() - entry["ts"]
-    return entry["data"], age > _CACHE_TTL   # stale = TTL expired but data exists
+    return entry["data"], age > _CACHE_TTL
 
 def _cache_set(key, data):
     _cache[key] = {"data": data, "ts": _time.time()}
@@ -48,7 +45,7 @@ def _cached_fetch(key, fetch_fn):
     """Try fetch_fn(); on error return stale cache if available."""
     data, stale = _cache_get(key)
     if data is not None and not stale:
-        return data, False                   # fresh cache hit
+        return data, False
     try:
         fresh = fetch_fn()
         _cache_set(key, fresh)
@@ -56,29 +53,13 @@ def _cached_fetch(key, fetch_fn):
     except Exception as e:
         if data is not None:
             print(f"[Cache] {key} fetch failed ({e}), serving stale data")
-            return data, True                # stale fallback
-        raise                                # nothing cached — re-raise
+            return data, True
+        raise
 
 # ---------------------------------------------------------------------------
-# Real-time price streaming via SSE
+# Live price fetching — each SSE connection fetches independently (no shared thread)
 # ---------------------------------------------------------------------------
-import yfinance as _yf
-
-_sse_lock       = _threading.Lock()
-_sse_queues:list= []
-_fast_prices:dict = {}      # ticker → price payload, updated every 15 s
-
-def _push_prices(payload: str):
-    """Broadcast SSE message to all connected clients; drop dead queues."""
-    with _sse_lock:
-        dead = []
-        for q in _sse_queues:
-            try:
-                q.put_nowait(payload)
-            except _queue.Full:
-                dead.append(q)
-        for q in dead:
-            _sse_queues.remove(q)
+_fast_prices: dict = {}   # ticker -> last known price payload; scoped to this process instance
 
 def _fetch_live_prices() -> list:
     """Batch-fetch latest price + day-change for portfolio holdings AND watchlist."""
@@ -89,8 +70,8 @@ def _fetch_live_prices() -> list:
     wl_tickers = [w if isinstance(w, str) else w.get("ticker", "") for w in raw_wl]
     wl_tickers = [t for t in wl_tickers if t]
 
-    holding_set  = {h["ticker"] for h in holdings}
-    all_tickers  = list(holding_set | set(wl_tickers))
+    holding_set = {h["ticker"] for h in holdings}
+    all_tickers = list(holding_set | set(wl_tickers))
     if not all_tickers:
         return []
 
@@ -101,7 +82,6 @@ def _fetch_live_prices() -> list:
             progress=False, auto_adjust=True,
             session=_yf_session,
         )
-        # Normalise: single ticker → DataFrame with one column level
         closes = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=1)
         if isinstance(closes, _pd.Series):
             closes = closes.to_frame(all_tickers[0])
@@ -123,7 +103,6 @@ def _fetch_live_prices() -> list:
 
         results = []
 
-        # ── Portfolio holdings (include PnL fields) ──
         for h in holdings:
             t = h["ticker"]
             current, day_pct, prev_close = _price_and_chg(t)
@@ -141,10 +120,9 @@ def _fetch_live_prices() -> list:
             results.append(payload)
             _fast_prices[t] = payload
 
-        # ── Watchlist tickers (price + day change only) ──
         for t in wl_tickers:
             if t in holding_set:
-                continue   # already handled above
+                continue
             current, day_pct, prev_close = _price_and_chg(t)
             if current is None:
                 continue
@@ -161,62 +139,31 @@ def _fetch_live_prices() -> list:
         return results
     except Exception as e:
         print(f"[LivePrice] batch error: {e}")
-        return list(_fast_prices.values())   # serve stale on error
+        return list(_fast_prices.values())
 
-def _price_worker():
-    import time
-    while True:
-        ok = False
-        try:
-            prices = _fetch_live_prices()
-            if prices:
-                _push_prices(json.dumps(prices))
-                ok = True
-        except Exception as e:
-            print(f"[PriceWorker] {e}")
-        time.sleep(15 if ok else 5)
 
-_threading.Thread(target=_price_worker, daemon=True, name="price-worker").start()
+# ---------------------------------------------------------------------------
+# Alert deduplication — persisted to /tmp so warm instances don't re-fire today's alerts
+# ---------------------------------------------------------------------------
+_ALERTS_FILE = "/tmp/ts_sent_alerts.json"
 
-# Track which alerts were already sent today so we don't spam
-_sent_alerts: set = set()
-
-def auto_scan_watchlist():
-    """Scan current watchlist tickers and send technical signals via Discord."""
+def _load_sent_alerts() -> set:
     try:
-        snapshot = get_watchlist_snapshot()
-        if not snapshot:
-            print("[Watchlist Scan] No watchlist tickers.")
-            return
+        today = datetime.now().strftime("%Y-%m-%d")
+        with open(_ALERTS_FILE) as f:
+            data = json.load(f)
+        return {k for k in data if k.startswith(today)}
+    except Exception:
+        return set()
 
-        lines = ["📋 Trading Sentinel — Watchlist Scan\n"]
-        for s in snapshot:
-            if "error" in s:
-                lines.append(f"⚠️ {s['ticker']}: {s['error']}")
-                continue
-            ticker = s["ticker"]
-            price  = s.get("current_price", 0)
-            chg    = s.get("day_change_pct", 0)
-            rsi    = s.get("rsi_14", 0)
-            macd   = s.get("macd", {})
-            vol    = s.get("volume", {})
+def _save_sent_alerts(alerts: set) -> None:
+    try:
+        with open(_ALERTS_FILE, "w") as f:
+            json.dump(list(alerts), f)
+    except Exception:
+        pass
 
-            signals = []
-            if rsi > 70:   signals.append(f"RSI {rsi:.0f} OB")
-            elif rsi < 30: signals.append(f"RSI {rsi:.0f} OS")
-            if macd.get("bullish_crossover"):  signals.append("MACD ↑ cross")
-            if macd.get("bearish_crossunder"): signals.append("MACD ↓ cross")
-            if vol.get("ratio", 1) >= 2:       signals.append(f"Vol ×{vol['ratio']:.1f}")
-            if abs(chg) >= 3:                  signals.append(f"{'▲' if chg>0 else '▼'}{abs(chg):.1f}%")
-
-            sig_txt = " | ".join(signals) if signals else "No alerts"
-            chg_sym = "+" if chg >= 0 else ""
-            lines.append(f"*{ticker}* ${price:,.2f} ({chg_sym}{chg:.2f}%) — {sig_txt}")
-
-        send_alert("\n".join(lines))
-        print(f"[Watchlist Scan] Sent for {len(snapshot)} tickers.")
-    except Exception as e:
-        print(f"[Watchlist Scan] Error: {e}")
+_sent_alerts: set = _load_sent_alerts()
 
 
 def _alert_key(ticker: str, alert_type: str) -> str:
@@ -226,11 +173,12 @@ def _alert_key(ticker: str, alert_type: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Immediate warning monitor — runs every 15 min (24/7); self-gates on ET market hours 9:30–16:00
+# Warning monitor — self-gates on ET market hours 9:30–16:00
 # ---------------------------------------------------------------------------
 
 def check_warnings(force: bool = False):
-    """Scan all holdings and fire Discord alerts for warning conditions."""
+    """Scan all holdings and fire alerts for warning conditions."""
+    global _sent_alerts
     if not force:
         now_et = datetime.now(_ET)
         hour, minute = now_et.hour, now_et.minute
@@ -264,77 +212,71 @@ def check_warnings(force: bool = False):
             send_once("rsi_ob", f"🔴 *{ticker}* RSI={rsi:.0f} — OVERBOUGHT\nPrice: ${price:,.2f} | Consider reducing position")
         elif rsi < 25:
             send_once("rsi_os", f"🟢 *{ticker}* RSI={rsi:.0f} — OVERSOLD\nPrice: ${price:,.2f} | Potential entry opportunity")
-
         if macd.get("bearish_crossunder"):
             send_once("macd_bear", f"🔴 *{ticker}* MACD Bearish Crossover\nPrice: ${price:,.2f} | Momentum turning DOWN — watch closely")
-
         if macd.get("bullish_crossover"):
             send_once("macd_bull", f"🟢 *{ticker}* MACD Bullish Crossover\nPrice: ${price:,.2f} | Momentum turning UP — potential buy signal")
-
         if chg <= -3:
             send_once("drop3", f"⚠️ *{ticker}* down {chg:.1f}% today\nPrice: ${price:,.2f} | Review your stop-loss")
-
         if chg <= -5:
             send_once("drop5", f"🚨 *{ticker}* down {chg:.1f}% — SHARP DROP\nPrice: ${price:,.2f} | Consider cutting losses")
-
         if chg >= 5:
             send_once("surge5", f"🚀 *{ticker}* up +{chg:.1f}% today\nPrice: ${price:,.2f} | Consider taking partial profit")
-
         if bb and price >= bb.get("upper", float("inf")) * 0.99:
             send_once("bb_upper", f"🔴 *{ticker}* at Bollinger Upper Band\nPrice: ${price:,.2f} | Overbought zone — possible reversal")
-
         if bb and price <= bb.get("lower", 0) * 1.01:
             send_once("bb_lower", f"🟢 *{ticker}* at Bollinger Lower Band\nPrice: ${price:,.2f} | Oversold zone — possible support/entry")
-
         if vol.get("ratio", 1) >= 2.5:
-            send_once("vol_spike", f"📊 *{ticker}* Volume Spike ×{vol['ratio']:.1f}\nPrice: ${price:,.2f} | Unusual activity — check for news")
+            send_once("vol_spike", f"📊 *{ticker}* Volume Spike x{vol['ratio']:.1f}\nPrice: ${price:,.2f} | Unusual activity — check for news")
 
     for msg in alerts:
         send_alert(msg)
 
     if alerts:
+        _save_sent_alerts(_sent_alerts)
         print(f"[Monitor] {len(alerts)} alert(s) sent at {datetime.now(_GMT7).strftime('%H:%M GMT+7')}")
 
 
 # ---------------------------------------------------------------------------
-# Scheduler jobs
+# Watchlist scan
 # ---------------------------------------------------------------------------
-scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
 
-# Daily digest — 6:00 PM VN time weekdays
-scheduler.add_job(
-    run_daily_digest, "cron",
-    day_of_week="mon-fri", hour=18, minute=0,
-    id="daily_digest"
-)
+def auto_scan_watchlist():
+    """Scan watchlist tickers and send technical signals via alert."""
+    try:
+        snapshot = get_watchlist_snapshot()
+        if not snapshot:
+            print("[Watchlist Scan] No watchlist tickers.")
+            return
 
-# Warning monitor — every 1 hour (function self-gates on ET market hours)
-scheduler.add_job(
-    check_warnings, "interval",
-    hours=1,
-    id="warning_monitor"
-)
+        lines = ["📋 Trading Sentinel — Watchlist Scan\n"]
+        for s in snapshot:
+            if "error" in s:
+                lines.append(f"⚠️ {s.get('ticker', '?')}: {s['error']}")
+                continue
+            ticker = s["ticker"]
+            price  = s.get("current_price", 0)
+            chg    = s.get("day_change_pct", 0)
+            rsi    = s.get("rsi_14", 0)
+            macd   = s.get("macd", {})
+            vol    = s.get("volume", {})
 
-# After-close summary -- 3:05 AM VN time (~4:05 PM ET)
-scheduler.add_job(
-    run_daily_digest, "cron",
-    day_of_week="tue-sat", hour=3, minute=5,
-    id="close_summary"
-)
+            signals = []
+            if rsi > 70:   signals.append(f"RSI {rsi:.0f} OB")
+            elif rsi < 30: signals.append(f"RSI {rsi:.0f} OS")
+            if macd.get("bullish_crossover"):  signals.append("MACD up cross")
+            if macd.get("bearish_crossunder"): signals.append("MACD dn cross")
+            if vol.get("ratio", 1) >= 2:       signals.append(f"Vol x{vol['ratio']:.1f}")
+            if abs(chg) >= 3:                  signals.append(f"{'up' if chg>0 else 'dn'} {abs(chg):.1f}%")
 
-# Watchlist scan — 5:55 PM VN time weekdays (just before digest)
-scheduler.add_job(
-    auto_scan_watchlist, "cron",
-    day_of_week="mon-fri", hour=17, minute=55,
-    id="daily_watchlist"
-)
+            sig_txt = " | ".join(signals) if signals else "No alerts"
+            chg_sym = "+" if chg >= 0 else ""
+            lines.append(f"*{ticker}* ${price:,.2f} ({chg_sym}{chg:.2f}%) — {sig_txt}")
 
-scheduler.start()
-print("Scheduler started (Asia/Ho_Chi_Minh):")
-print("  Daily digest    -> 6:00 PM VN (Mon-Fri)")
-print("  Warning monitor -> Every 1 hour (self-gates on ET market hours)")
-print("  Close summary   -> 3:05 AM VN (Tue-Sat ~ after US close)")
-print("  Watchlist scan  -> 5:55 PM VN (Mon-Fri)")
+        send_alert("\n".join(lines))
+        print(f"[Watchlist Scan] Sent for {len(snapshot)} tickers.")
+    except Exception as e:
+        print(f"[Watchlist Scan] Error: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -360,26 +302,26 @@ def portfolio():
 
 @app.route("/api/stream/prices")
 def stream_prices():
-    """SSE endpoint — pushes live price updates every 15 s."""
-    q = _queue.Queue(maxsize=10)
-    with _sse_lock:
-        _sse_queues.append(q)
-    # Send cached snapshot immediately so the client doesn't wait 15 s
-    if _fast_prices:
-        q.put_nowait(json.dumps(list(_fast_prices.values())))
+    """SSE endpoint — each connection independently fetches and streams live prices.
 
+    On Vercel the function runs until maxDuration, then the browser's EventSource
+    reconnects automatically (no data loss, just a brief gap between ticks).
+    """
     def generate():
-        try:
-            while True:
-                try:
-                    msg = q.get(timeout=25)
-                    yield f"data: {msg}\n\n"
-                except _queue.Empty:
-                    yield ": heartbeat\n\n"   # keep connection alive through proxies
-        finally:
-            with _sse_lock:
-                if q in _sse_queues:
-                    _sse_queues.remove(q)
+        # Serve whatever we have cached immediately so the client doesn't wait 15s
+        if _fast_prices:
+            yield f"data: {json.dumps(list(_fast_prices.values()))}\n\n"
+        while True:
+            try:
+                prices = _fetch_live_prices()
+                if prices:
+                    yield f"data: {json.dumps(prices)}\n\n"
+                else:
+                    yield ": heartbeat\n\n"
+            except Exception as e:
+                print(f"[SSE] {e}")
+                yield ": heartbeat\n\n"
+            _time.sleep(15)
 
     return Response(
         generate(),
@@ -410,23 +352,21 @@ def daily_digest():
 def suggest_watchlist():
     result = ai_suggest_watchlist(top_n_final=6)
     suggestions = result.get("suggestions", [])
-
-    # Auto-update portfolio.json watchlist
     if suggestions:
-        portfolio = load_portfolio()
-        portfolio["watchlist"] = [s["ticker"] for s in suggestions]
-        with open("portfolio.json", "w") as f:
-            json.dump(portfolio, f, indent=2)
-
+        p = load_portfolio()
+        p["watchlist"] = [s["ticker"] for s in suggestions]
+        save_portfolio(p)
     return jsonify(result)
 
 
 @app.route("/check-now", methods=["POST"])
 def check_now():
     """Manually trigger an immediate warning check."""
-    _sent_alerts.clear()   # clear cooldowns so all current warnings fire
+    global _sent_alerts
+    _sent_alerts = set()
+    _save_sent_alerts(_sent_alerts)
     check_warnings(force=True)
-    return jsonify({"message": "Warning check complete. Alerts sent to Discord if any found."})
+    return jsonify({"message": "Warning check complete. Alerts sent if any found."})
 
 
 @app.route("/portfolio-data")
@@ -437,10 +377,10 @@ def portfolio_data():
 @app.route("/portfolio-update", methods=["POST"])
 def portfolio_update():
     data = request.json or {}
-    portfolio = load_portfolio()
-    portfolio["holdings"]         = data.get("holdings", portfolio.get("holdings", []))
-    portfolio["watchlist"]        = data.get("watchlist", portfolio.get("watchlist", []))
-    save_portfolio(portfolio)
+    p = load_portfolio()
+    p["holdings"]  = data.get("holdings",  p.get("holdings", []))
+    p["watchlist"] = data.get("watchlist", p.get("watchlist", []))
+    save_portfolio(p)
     return jsonify({"ok": True})
 
 
@@ -449,7 +389,6 @@ def chat():
     body = request.json or {}
     user_message = body.get("message", "").strip()
     history = body.get("history", [])
-
     if not user_message:
         return jsonify({"error": "Empty message"}), 400
 
@@ -460,26 +399,18 @@ def chat():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-# ---------------------------------------------------------------------------
-# Market Breadth
-# ---------------------------------------------------------------------------
-
 @app.route("/market-breadth")
 def market_breadth():
     return jsonify(get_market_breadth())
 
 
-# ---------------------------------------------------------------------------
-# Position Sizer
-# ---------------------------------------------------------------------------
-
 @app.route("/position-size", methods=["POST"])
 def position_size():
-    d       = request.json or {}
-    entry   = float(d.get("entry",   0))
-    stop    = float(d.get("stop",    0))
-    target  = float(d.get("target",  0))
-    account = float(d.get("account", 10000))
+    d        = request.json or {}
+    entry    = float(d.get("entry",    0))
+    stop     = float(d.get("stop",     0))
+    target   = float(d.get("target",   0))
+    account  = float(d.get("account",  10000))
     risk_pct = float(d.get("risk_pct", 1.0))
 
     if entry <= 0 or stop <= 0 or entry == stop:
@@ -504,10 +435,6 @@ def position_size():
     return jsonify(result)
 
 
-# ---------------------------------------------------------------------------
-# Trade Journal
-# ---------------------------------------------------------------------------
-
 @app.route("/journal")
 def journal():
     return jsonify(load_journal())
@@ -523,6 +450,35 @@ def journal_add():
 def journal_delete(entry_id):
     ok = delete_journal_entry(entry_id)
     return jsonify({"ok": ok})
+
+
+# ---------------------------------------------------------------------------
+# Vercel Cron routes — GET requests fired by Vercel's scheduler (UTC times)
+#   /cron/daily-digest   → "0 11 * * 1-5"   = 6 PM VN Mon–Fri
+#   /cron/close-summary  → "5 20 * * 1-5"   = 3:05 AM VN Tue–Sat
+#   /cron/check-warnings → "0 * * * *"      = every hour
+#   /cron/watchlist-scan → "55 10 * * 1-5"  = 5:55 PM VN Mon–Fri
+# ---------------------------------------------------------------------------
+
+@app.route("/cron/daily-digest")
+def cron_daily_digest():
+    msg = run_daily_digest()
+    return jsonify({"ok": True, "message": msg})
+
+@app.route("/cron/close-summary")
+def cron_close_summary():
+    msg = run_daily_digest()
+    return jsonify({"ok": True, "message": msg})
+
+@app.route("/cron/check-warnings")
+def cron_check_warnings():
+    check_warnings()
+    return jsonify({"ok": True})
+
+@app.route("/cron/watchlist-scan")
+def cron_watchlist_scan():
+    auto_scan_watchlist()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

@@ -60,7 +60,8 @@ gemini_client = genai.Client(
 # ---------------------------------------------------------------------------
 
 # Persist to DATA_DIR if set (Railway persistent volume), else local file.
-_PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", "."), "portfolio.json")
+_default_data_dir = "/tmp" if os.getenv("VERCEL") else "."
+_PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfolio.json")
 
 def load_portfolio() -> dict:
     # 1. Persistent volume / local file written by save_portfolio

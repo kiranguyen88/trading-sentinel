@@ -1,6 +1,5 @@
 google-genai
 flask
-gunicorn
 yfinance
 pandas
 numpy
@@ -8,4 +7,3 @@ ta
 python-dotenv
 requests
 twilio
-apscheduler
