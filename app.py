@@ -389,6 +389,9 @@ def storage_status():
             out["watchlist_count"] = len(rt.get("watchlist", [])) if rt else None
         except Exception as e:
             out["blob_error"] = repr(e)
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                out["error_body"] = resp.text[:500]
     return jsonify(out)
 
 
