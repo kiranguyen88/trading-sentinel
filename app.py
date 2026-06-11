@@ -380,7 +380,10 @@ def portfolio_update():
     p = load_portfolio()
     p["holdings"]  = data.get("holdings",  p.get("holdings", []))
     p["watchlist"] = data.get("watchlist", p.get("watchlist", []))
-    save_portfolio(p)
+    try:
+        save_portfolio(p)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
     return jsonify({"ok": True})
 
 

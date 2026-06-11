@@ -1163,7 +1163,9 @@ Quick starts:
         statusEl.style.color = 'var(--green)';
         setTimeout(() => { closePortfolioModal(); loadPortfolio(); }, 800);
       } else {
-        statusEl.textContent = 'Save failed.';
+        let msg = 'Save failed.';
+        try { const d = await res.json(); if (d && d.error) msg = d.error; } catch(_) {}
+        statusEl.textContent = msg;
         statusEl.style.color = 'var(--red)';
       }
     } catch(e) {
@@ -1199,7 +1201,9 @@ Quick starts:
         statusEl.style.color = 'var(--green)';
         setTimeout(() => { closeWatchlistModal(); loadWatchlist(); }, 800);
       } else {
-        statusEl.textContent = 'Save failed.';
+        let msg = 'Save failed.';
+        try { const d = await res.json(); if (d && d.error) msg = d.error; } catch(_) {}
+        statusEl.textContent = msg;
         statusEl.style.color = 'var(--red)';
       }
     } catch(e) {

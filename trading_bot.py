@@ -60,10 +60,51 @@ gemini_client = genai.Client(
 # ---------------------------------------------------------------------------
 
 # Persist to DATA_DIR if set (Railway persistent volume), else local file.
+# NOTE: on Vercel the filesystem is ephemeral (/tmp is per-instance and wiped on
+# cold start), so file writes do NOT survive. When BLOB_READ_WRITE_TOKEN is set
+# (auto-added by creating a Blob store in the Vercel dashboard), Vercel Blob is
+# the durable source of truth and edits persist across instances/redeploys.
 _default_data_dir = "/tmp" if os.getenv("VERCEL") else "."
 _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfolio.json")
 
+_BLOB_TOKEN = os.getenv("BLOB_READ_WRITE_TOKEN")
+_BLOB_KEY = "portfolio.json"   # stable pathname in the Blob store (overwritten on save)
+
+
+def _blob_load() -> dict | None:
+    """Read the portfolio JSON from Vercel Blob. None if absent or unavailable."""
+    import vercel_blob
+    listing = vercel_blob.list({"prefix": _BLOB_KEY})
+    for b in listing.get("blobs", []):
+        if b.get("pathname") == _BLOB_KEY:
+            url = b.get("downloadUrl") or b.get("url")
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            return json.loads(resp.content)
+    return None
+
+
+def _blob_save(data: dict) -> None:
+    """Write the portfolio JSON to Vercel Blob, overwriting the existing key."""
+    import vercel_blob
+    payload = json.dumps(data, indent=2).encode("utf-8")
+    vercel_blob.put(_BLOB_KEY, payload, {
+        "addRandomSuffix": "false",
+        "allowOverwrite": "true",
+        "contentType": "application/json",
+    })
+
+
 def load_portfolio() -> dict:
+    # 0. Vercel Blob — durable source of truth when configured.
+    if _BLOB_TOKEN:
+        try:
+            data = _blob_load()
+            if data:
+                return data
+        except Exception as e:
+            print(f"[portfolio] Blob load failed, falling back: {e}")
+
     # 1. Persistent volume / local file written by save_portfolio
     if os.path.exists(_PORTFOLIO_PATH):
         try:
@@ -85,21 +126,41 @@ def load_portfolio() -> dict:
     if env_json:
         try:
             data = json.loads(env_json)
-            save_portfolio(data)   # write to local path for this container lifetime
+            save_portfolio(data)   # seeds the Blob (and local cache) from the env snapshot
             return data
         except Exception:
             pass
 
     # 3. Bundled defaults (portfolio.json committed in git)
     with open("portfolio.json") as f:
-        return json.load(f)
+        data = json.load(f)
+    if _BLOB_TOKEN:
+        try:
+            _blob_save(data)       # seed the Blob so the first edit has a baseline
+        except Exception as e:
+            print(f"[portfolio] Blob seed failed: {e}")
+    return data
+
 
 def save_portfolio(data: dict) -> None:
-    dir_ = os.path.dirname(_PORTFOLIO_PATH)
-    if dir_:
-        os.makedirs(dir_, exist_ok=True)
-    with open(_PORTFOLIO_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    # Durable store first (Vercel). Raise on failure so callers can report it
+    # instead of silently losing the user's edit.
+    blob_ok = False
+    if _BLOB_TOKEN:
+        _blob_save(data)
+        blob_ok = True
+
+    # Local file: source of truth off-Vercel (Railway volume / local dev),
+    # ephemeral cache on Vercel. Best-effort only when the Blob save succeeded.
+    try:
+        dir_ = os.path.dirname(_PORTFOLIO_PATH)
+        if dir_:
+            os.makedirs(dir_, exist_ok=True)
+        with open(_PORTFOLIO_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        if not blob_ok:
+            raise   # nothing persisted anywhere → a real failure
 
 
 # ---------------------------------------------------------------------------
