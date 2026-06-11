@@ -374,27 +374,6 @@ def portfolio_data():
     return jsonify(load_portfolio())
 
 
-@app.route("/storage-status")
-def storage_status():
-    """TEMP diagnostic: report whether Blob storage is wired up and working."""
-    import trading_bot as tb
-    out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
-    if tb._BLOB_TOKEN:
-        try:
-            data = load_portfolio()
-            tb._blob_save(data)              # write via the real private-access path
-            rt = tb._blob_load()             # read it straight back
-            out["blob_write"] = "ok"
-            out["blob_read_back"] = "ok" if rt is not None else "empty"
-            out["watchlist_count"] = len(rt.get("watchlist", [])) if rt else None
-        except Exception as e:
-            out["blob_error"] = repr(e)
-            resp = getattr(e, "response", None)
-            if resp is not None:
-                out["error_body"] = resp.text[:500]
-    return jsonify(out)
-
-
 @app.route("/portfolio-update", methods=["POST"])
 def portfolio_update():
     data = request.json or {}
@@ -405,6 +384,10 @@ def portfolio_update():
         save_portfolio(p)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
+    # Drop the cached snapshots so the edit shows up on the next /portfolio
+    # and /watchlist fetch instead of waiting out the 120s TTL.
+    _cache.pop("portfolio", None)
+    _cache.pop("watchlist", None)
     return jsonify({"ok": True})
 
 

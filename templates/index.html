@@ -1161,7 +1161,7 @@ Quick starts:
       if (res.ok) {
         statusEl.textContent = 'Saved!';
         statusEl.style.color = 'var(--green)';
-        setTimeout(() => { closePortfolioModal(); loadPortfolio(); }, 800);
+        setTimeout(() => { closePortfolioModal(); loadPortfolio(); }, 2500);
       } else {
         let msg = 'Save failed.';
         try { const d = await res.json(); if (d && d.error) msg = d.error; } catch(_) {}
@@ -1199,7 +1199,7 @@ Quick starts:
       if (res.ok) {
         statusEl.textContent = 'Saved!';
         statusEl.style.color = 'var(--green)';
-        setTimeout(() => { closeWatchlistModal(); loadWatchlist(); }, 800);
+        setTimeout(() => { closeWatchlistModal(); loadWatchlist(); }, 2500);
       } else {
         let msg = 'Save failed.';
         try { const d = await res.json(); if (d && d.error) msg = d.error; } catch(_) {}
