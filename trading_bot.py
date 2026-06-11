@@ -69,36 +69,48 @@ _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfo
 
 _BLOB_TOKEN = os.getenv("BLOB_READ_WRITE_TOKEN")
 _BLOB_KEY = "portfolio.json"   # stable pathname in the Blob store (overwritten on save)
+_BLOB_API = "https://blob.vercel-storage.com"
+_BLOB_API_VERSION = "10"
+# The store is configured for PRIVATE access: writes set access=private, and reads
+# fetch the .private.blob.vercel-storage.com URL with the token in the auth header.
+# (The vercel_blob package hardcodes public access, so we call the API directly.)
+
+
+def _blob_auth() -> dict:
+    return {"authorization": f"Bearer {_BLOB_TOKEN}", "x-api-version": _BLOB_API_VERSION}
 
 
 def _blob_load() -> dict | None:
     """Read the portfolio JSON from Vercel Blob. None if absent or unavailable."""
-    import vercel_blob
-    listing = vercel_blob.list({"prefix": _BLOB_KEY})
-    for b in listing.get("blobs", []):
+    listing = requests.get(_BLOB_API, params={"prefix": _BLOB_KEY, "limit": "100"},
+                           headers=_blob_auth(), timeout=15)
+    listing.raise_for_status()
+    for b in listing.json().get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
             url = b.get("downloadUrl") or b.get("url")
-            # Bust the edge cache: overwriting a blob reuses the same URL, so the
-            # CDN can serve a stale copy right after a save. uploadedAt changes on
-            # every write, making the query string unique and forcing a fresh fetch.
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}v={b.get('uploadedAt', '')}"
-            resp = requests.get(url, headers={"Cache-Control": "no-cache"}, timeout=10)
+            # Private blobs require the token on the GET; cache-control:0 on write
+            # plus an authenticated request keeps reads fresh (no shared CDN copy).
+            resp = requests.get(url, headers={**_blob_auth(), "cache-control": "no-cache"}, timeout=15)
             resp.raise_for_status()
             return json.loads(resp.content)
     return None
 
 
 def _blob_save(data: dict) -> None:
-    """Write the portfolio JSON to Vercel Blob, overwriting the existing key."""
-    import vercel_blob
+    """Write the portfolio JSON to the private Blob store, overwriting the key."""
     payload = json.dumps(data, indent=2).encode("utf-8")
-    vercel_blob.put(_BLOB_KEY, payload, {
-        "addRandomSuffix": "false",
-        "allowOverwrite": "true",
-        "contentType": "application/json",
-        "cacheControlMaxAge": "0",   # minimise edge caching of saved data
-    })
+    resp = requests.put(
+        f"{_BLOB_API}/?pathname={_BLOB_KEY}",
+        data=payload,
+        headers={
+            **_blob_auth(),
+            "access": "private",
+            "x-content-type": "application/json",
+            "x-cache-control-max-age": "0",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
 
 
 def load_portfolio() -> dict:

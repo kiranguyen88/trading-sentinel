@@ -7,4 +7,3 @@ ta
 python-dotenv
 requests
 twilio
-vercel_blob

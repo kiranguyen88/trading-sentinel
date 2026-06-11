@@ -381,16 +381,12 @@ def storage_status():
     out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
     if tb._BLOB_TOKEN:
         try:
-            import vercel_blob
-            vercel_blob.put("diag.json", b'{"diag":true}', {
-                "addRandomSuffix": "false", "allowOverwrite": "true",
-                "contentType": "application/json", "cacheControlMaxAge": "0"})
-            blobs = vercel_blob.list({"prefix": tb._BLOB_KEY}).get("blobs", [])
+            data = load_portfolio()
+            tb._blob_save(data)              # write via the real private-access path
+            rt = tb._blob_load()             # read it straight back
             out["blob_write"] = "ok"
-            out["portfolio_blob_present"] = bool(blobs)
-            if blobs:
-                out["portfolio_uploadedAt"] = blobs[0].get("uploadedAt")
-                out["portfolio_size"] = blobs[0].get("size")
+            out["blob_read_back"] = "ok" if rt is not None else "empty"
+            out["watchlist_count"] = len(rt.get("watchlist", [])) if rt else None
         except Exception as e:
             out["blob_error"] = repr(e)
     return jsonify(out)
