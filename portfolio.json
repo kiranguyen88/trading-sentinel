@@ -10,7 +10,19 @@
     {"ticker": "AMZN",  "entry": null, "stop": null, "notes": ""},
     {"ticker": "AMD",   "entry": null, "stop": null, "notes": ""},
     {"ticker": "PLTR",  "entry": null, "stop": null, "notes": ""},
-    {"ticker": "MSTR",  "entry": null, "stop": null, "notes": ""}
+    {"ticker": "MSTR",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "IREN",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "IONQ",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "SYM",   "entry": null, "stop": null, "notes": ""},
+    {"ticker": "CRWV",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "ASTS",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "RKLB",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "IBM",   "entry": null, "stop": null, "notes": ""},
+    {"ticker": "QBTS",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "QUBT",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "USAR",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "SBSW",  "entry": null, "stop": null, "notes": ""},
+    {"ticker": "SMCI",  "entry": null, "stop": null, "notes": ""}
   ],
   "whatsapp_number": "whatsapp:+84949308344",
   "whatsapp_numbers": ["whatsapp:+84949308344"]
