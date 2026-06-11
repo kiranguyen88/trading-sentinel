@@ -105,6 +105,7 @@ def _blob_save(data: dict) -> None:
         headers={
             **_blob_auth(),
             "x-vercel-blob-access": "private",
+            "x-allow-overwrite": "1",
             "x-content-type": "application/json",
             "x-cache-control-max-age": "0",
         },
