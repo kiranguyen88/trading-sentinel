@@ -377,18 +377,24 @@ def portfolio_data():
 @app.route("/storage-status")
 def storage_status():
     """TEMP diagnostic: report whether Blob storage is wired up and working."""
-    import trading_bot as tb
+    import trading_bot as tb, requests as _rq, json as _j
     out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
     if tb._BLOB_TOKEN:
-        try:
-            data = load_portfolio()
-            tb._blob_save(data)              # write via the real private-access path
-            rt = tb._blob_load()             # read it straight back
-            out["blob_write"] = "ok"
-            out["blob_read_back"] = "ok" if rt is not None else "empty"
-            out["watchlist_count"] = len(rt.get("watchlist", [])) if rt else None
-        except Exception as e:
-            out["blob_error"] = repr(e)
+        payload = _j.dumps(load_portfolio()).encode()
+        attempts = []
+        for ver in ["7", "10", "11", "12", "13", "14"]:
+            try:
+                r = _rq.put(
+                    f"{tb._BLOB_API}/?pathname={tb._BLOB_KEY}", data=payload,
+                    headers={"authorization": f"Bearer {tb._BLOB_TOKEN}",
+                             "x-api-version": ver, "access": "private",
+                             "x-content-type": "application/json",
+                             "x-cache-control-max-age": "0"},
+                    timeout=15)
+                attempts.append({"ver": ver, "status": r.status_code, "body": r.text[:300]})
+            except Exception as e:
+                attempts.append({"ver": ver, "error": repr(e)})
+        out["attempts"] = attempts
     return jsonify(out)
 
 
