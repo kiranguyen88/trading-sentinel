@@ -78,7 +78,12 @@ def _blob_load() -> dict | None:
     for b in listing.get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
             url = b.get("downloadUrl") or b.get("url")
-            resp = requests.get(url, timeout=10)
+            # Bust the edge cache: overwriting a blob reuses the same URL, so the
+            # CDN can serve a stale copy right after a save. uploadedAt changes on
+            # every write, making the query string unique and forcing a fresh fetch.
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}v={b.get('uploadedAt', '')}"
+            resp = requests.get(url, headers={"Cache-Control": "no-cache"}, timeout=10)
             resp.raise_for_status()
             return json.loads(resp.content)
     return None
@@ -92,6 +97,7 @@ def _blob_save(data: dict) -> None:
         "addRandomSuffix": "false",
         "allowOverwrite": "true",
         "contentType": "application/json",
+        "cacheControlMaxAge": "0",   # minimise edge caching of saved data
     })
 
 

@@ -374,6 +374,28 @@ def portfolio_data():
     return jsonify(load_portfolio())
 
 
+@app.route("/storage-status")
+def storage_status():
+    """TEMP diagnostic: report whether Blob storage is wired up and working."""
+    import trading_bot as tb
+    out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
+    if tb._BLOB_TOKEN:
+        try:
+            import vercel_blob
+            vercel_blob.put("diag.json", b'{"diag":true}', {
+                "addRandomSuffix": "false", "allowOverwrite": "true",
+                "contentType": "application/json", "cacheControlMaxAge": "0"})
+            blobs = vercel_blob.list({"prefix": tb._BLOB_KEY}).get("blobs", [])
+            out["blob_write"] = "ok"
+            out["portfolio_blob_present"] = bool(blobs)
+            if blobs:
+                out["portfolio_uploadedAt"] = blobs[0].get("uploadedAt")
+                out["portfolio_size"] = blobs[0].get("size")
+        except Exception as e:
+            out["blob_error"] = repr(e)
+    return jsonify(out)
+
+
 @app.route("/portfolio-update", methods=["POST"])
 def portfolio_update():
     data = request.json or {}
