@@ -70,7 +70,7 @@ _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfo
 _BLOB_TOKEN = os.getenv("BLOB_READ_WRITE_TOKEN")
 _BLOB_KEY = "portfolio.json"   # stable pathname in the Blob store (overwritten on save)
 _BLOB_API = "https://blob.vercel-storage.com"
-_BLOB_API_VERSION = "10"
+_BLOB_API_VERSION = "12"
 # The store is configured for PRIVATE access: writes set access=private, and reads
 # fetch the .private.blob.vercel-storage.com URL with the token in the auth header.
 # (The vercel_blob package hardcodes public access, so we call the API directly.)
@@ -104,7 +104,7 @@ def _blob_save(data: dict) -> None:
         data=payload,
         headers={
             **_blob_auth(),
-            "access": "private",
+            "x-vercel-blob-access": "private",
             "x-content-type": "application/json",
             "x-cache-control-max-age": "0",
         },
