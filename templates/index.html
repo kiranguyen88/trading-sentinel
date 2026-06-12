@@ -1128,9 +1128,6 @@ Quick starts:
         <label>Stop $</label>
         <input class="wl-stop inp-price" type="number" step="0.01" placeholder="0.00" value="${w.stop||''}">
       </div>
-      <input class="wl-notes" type="text" placeholder="Notes / thesis..."
-             value="${(w.notes||'').replace(/"/g,'&quot;')}"
-             style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.82rem;outline:none">
       <button class="del-btn" onclick="this.parentElement.remove()" title="Remove">✕</button>
     `;
     container.appendChild(row);
@@ -1181,8 +1178,7 @@ Quick starts:
       if (!ticker) continue;
       const entry = parseFloat(row.querySelector('.wl-entry').value) || null;
       const stop  = parseFloat(row.querySelector('.wl-stop').value)  || null;
-      const notes = row.querySelector('.wl-notes').value.trim();
-      watchlist.push({ ticker, entry, stop, notes });
+      watchlist.push({ ticker, entry, stop, notes: "" });
     }
     const payload = {
       holdings: _portfolioData.holdings || [],
