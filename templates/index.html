@@ -636,7 +636,7 @@ Quick starts:
   async function loadPortfolio() {
     document.getElementById('refresh-btn').style.transform = 'rotate(360deg)';
     try {
-      const res = await fetch('/portfolio');
+      const res = await fetch('/portfolio', {cache:'no-store'});
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         _lastPortfolio = data;
@@ -987,7 +987,7 @@ Quick starts:
   async function loadWatchlist() {
     const el = document.getElementById('watchlist');
     try {
-      const res = await fetch('/watchlist');
+      const res = await fetch('/watchlist', {cache:'no-store'});
       if (!res.ok) throw new Error(res.status);
       let data;
       try { data = await res.json(); }
@@ -1055,7 +1055,7 @@ Quick starts:
   let _portfolioData = {};
 
   async function openPortfolioModal() {
-    const res = await fetch('/portfolio-data');
+    const res = await fetch('/portfolio-data', {cache:'no-store'});
     _portfolioData = await res.json();
     const container = document.getElementById('modal-holdings');
     container.innerHTML = '';
@@ -1065,7 +1065,7 @@ Quick starts:
   }
 
   async function openWatchlistModal() {
-    const res = await fetch('/portfolio-data');
+    const res = await fetch('/portfolio-data', {cache:'no-store'});
     _portfolioData = await res.json();
     const container = document.getElementById('modal-watchlist-rows');
     container.innerHTML = '';
@@ -1085,7 +1085,7 @@ Quick starts:
   }
 
   async function copyPortfolioJson(btn) {
-    const res = await fetch('/portfolio-data');
+    const res = await fetch('/portfolio-data', {cache:'no-store'});
     const data = await res.json();
     await navigator.clipboard.writeText(JSON.stringify(data));
     const orig = btn.textContent;

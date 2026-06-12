@@ -293,6 +293,7 @@ def portfolio():
     try:
         data, stale = _cached_fetch("portfolio", get_portfolio_snapshot)
         resp = jsonify(data)
+        resp.headers["Cache-Control"] = "no-store"
         if stale:
             resp.headers["X-Stale"] = "1"
         return resp
@@ -335,6 +336,7 @@ def watchlist():
     try:
         data, stale = _cached_fetch("watchlist", get_watchlist_snapshot)
         resp = jsonify(data)
+        resp.headers["Cache-Control"] = "no-store"
         if stale:
             resp.headers["X-Stale"] = "1"
         return resp
@@ -371,7 +373,9 @@ def check_now():
 
 @app.route("/portfolio-data")
 def portfolio_data():
-    return jsonify(load_portfolio())
+    resp = jsonify(load_portfolio())
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/portfolio-update", methods=["POST"])
