@@ -378,27 +378,6 @@ def portfolio_data():
     return resp
 
 
-@app.route("/storage-status")
-def storage_status():
-    """TEMP diagnostic: report which Supabase env vars the app sees + live read."""
-    import os as _os, trading_bot as tb
-    seen = {k: bool(_os.getenv(k)) for k in [
-        "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "SUPABASE_KEY",
-        "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY"]}
-    out = {"env_seen": seen, "supabase_ok": tb._SUPABASE_OK}
-    if tb._SUPABASE_OK:
-        try:
-            data = tb._sb_load()
-            out["db_read"] = "ok" if data is not None else "empty"
-            out["db_holdings"] = [h.get("ticker") for h in (data or {}).get("holdings", [])]
-        except Exception as e:
-            out["db_error"] = repr(e)
-            r = getattr(e, "response", None)
-            if r is not None:
-                out["db_error_body"] = r.text[:300]
-    return jsonify(out)
-
-
 @app.route("/portfolio-update", methods=["POST"])
 def portfolio_update():
     data = request.json or {}
