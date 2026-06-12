@@ -89,12 +89,12 @@ def _blob_load() -> dict | None:
     for b in listing.json().get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
             url = b.get("url") or b.get("downloadUrl")
-            # The blob URL is edge-cached and list() is eventually consistent, so we
-            # can't rely on uploadedAt to bust it. Use a unique-per-read token so
-            # every GET misses the edge cache and hits the (consistent) origin.
+            # The blob URL is edge-cached. The API honors the `cache=0` query param
+            # (and only that one) to bypass the CDN and read from origin storage,
+            # giving strong read-after-write consistency for private blobs.
             sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}_cb={time.time_ns()}"
-            resp = requests.get(url, headers={**_blob_auth(), "cache-control": "no-cache"}, timeout=15)
+            url = f"{url}{sep}cache=0"
+            resp = requests.get(url, headers={"authorization": f"Bearer {_BLOB_TOKEN}"}, timeout=15)
             resp.raise_for_status()
             return json.loads(resp.content)
     return None
