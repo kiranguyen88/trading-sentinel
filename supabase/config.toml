@@ -1,0 +1,3 @@
+# Supabase project config — used by the Supabase GitHub integration.
+# Working directory in the integration settings should be "." (this folder is at repo root).
+project_id = "fcwpjsezrwnjxrqpuwvc"
