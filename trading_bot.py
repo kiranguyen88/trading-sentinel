@@ -68,8 +68,11 @@ gemini_client = genai.Client(
 _default_data_dir = "/tmp" if os.getenv("VERCEL") else "."
 _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfolio.json")
 
-_SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
-_SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+# URL is not secret, so default it here — the only required env var is the
+# secret service key (SUPABASE_SERVICE_KEY). Accepts a few common key names.
+_SUPABASE_URL = (os.getenv("SUPABASE_URL") or "https://fcwpjsezrwnjxrqpuwvc.supabase.co").rstrip("/")
+_SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                 or os.getenv("SUPABASE_KEY"))
 _SUPABASE_OK = bool(_SUPABASE_URL and _SUPABASE_KEY)
 _STATE_ID = "portfolio"   # primary key of the row holding the whole snapshot
 
