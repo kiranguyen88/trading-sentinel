@@ -374,6 +374,29 @@ def portfolio_data():
     return jsonify(load_portfolio())
 
 
+@app.route("/storage-status")
+def storage_status():
+    """TEMP diagnostic: in-process Blob round-trip with a holdings change."""
+    import trading_bot as tb, copy
+    out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
+    try:
+        before = load_portfolio()
+        out["load_holdings_before"] = [h.get("ticker") for h in before.get("holdings", [])]
+        test = copy.deepcopy(before)
+        test["holdings"] = before.get("holdings", []) + [{"ticker": "DIAGX", "quantity": 1, "avg_buy_price": 1.0}]
+        tb._blob_save(test)
+        rt = tb._blob_load()
+        out["blob_read_holdings"] = [h.get("ticker") for h in rt.get("holdings", [])] if rt else None
+        out["load_holdings_after"] = [h.get("ticker") for h in load_portfolio().get("holdings", [])]
+        tb._blob_save(before)   # restore
+    except Exception as e:
+        out["error"] = repr(e)
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            out["error_body"] = resp.text[:400]
+    return jsonify(out)
+
+
 @app.route("/portfolio-update", methods=["POST"])
 def portfolio_update():
     data = request.json or {}
