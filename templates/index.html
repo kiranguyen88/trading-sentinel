@@ -1022,7 +1022,9 @@ Quick starts:
       el.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:.75rem">No watchlist tickers</div>';
       return;
     }
-    const rows = items.filter(Boolean).map(s => {
+    const rows = items.filter(Boolean)
+      .slice().sort((a, b) => (a.ticker || '').localeCompare(b.ticker || ''))
+      .map(s => {
       if (s.error) return `<div class="wl-row"><span style="color:var(--yellow);font-weight:700;font-size:.8rem;width:46px;flex-shrink:0">${s.ticker||'?'}</span><span style="color:var(--red);font-size:.7rem;flex:1">${s.error}</span></div>`;
       const dayClass = s.day_change_pct > 0 ? 'up' : s.day_change_pct < 0 ? 'down' : 'neutral';
       const rsi = s.rsi_14;
@@ -1069,9 +1071,10 @@ Quick starts:
     _portfolioData = await res.json();
     const container = document.getElementById('modal-watchlist-rows');
     container.innerHTML = '';
-    (_portfolioData.watchlist || []).forEach(w =>
-      addWatchlistRow(typeof w === 'string' ? {ticker: w} : w)
-    );
+    (_portfolioData.watchlist || [])
+      .map(w => typeof w === 'string' ? {ticker: w} : w)
+      .sort((a, b) => (a.ticker || '').localeCompare(b.ticker || ''))
+      .forEach(w => addWatchlistRow(w));
     document.getElementById('save-status-wl').textContent = '';
     document.getElementById('watchlist-modal').classList.add('open');
   }
