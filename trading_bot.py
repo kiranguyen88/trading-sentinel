@@ -88,8 +88,11 @@ def _blob_load() -> dict | None:
     for b in listing.json().get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
             url = b.get("downloadUrl") or b.get("url")
-            # Private blobs require the token on the GET; cache-control:0 on write
-            # plus an authenticated request keeps reads fresh (no shared CDN copy).
+            # The blob URL is edge-cached, so a bare GET returns a stale copy after
+            # a save. uploadedAt changes on every write, so using it as a query
+            # param makes the URL unique per version → cache miss → fresh content.
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}_cb={b.get('uploadedAt', '')}"
             resp = requests.get(url, headers={**_blob_auth(), "cache-control": "no-cache"}, timeout=15)
             resp.raise_for_status()
             return json.loads(resp.content)
