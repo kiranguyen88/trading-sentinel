@@ -463,17 +463,6 @@ def journal_delete(entry_id):
     return jsonify({"ok": ok})
 
 
-@app.route("/alert-test")
-def alert_test():
-    """TEMP diagnostic: confirm the Discord webhook is configured and delivering."""
-    import trading_bot as tb
-    configured = bool(tb._DISCORD_WEBHOOK)
-    delivered = tb.send_discord(
-        "✅ Trading Sentinel — alert test. If you see this, Discord alerts are working."
-    ) if configured else False
-    return jsonify({"webhook_configured": configured, "delivered": delivered})
-
-
 # ---------------------------------------------------------------------------
 # Vercel Cron routes — GET requests fired by Vercel's scheduler (UTC times)
 #   /cron/daily-digest   → "0 11 * * 1-5"   = 6 PM VN Mon–Fri
