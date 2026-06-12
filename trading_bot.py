@@ -88,7 +88,7 @@ def _blob_load() -> dict | None:
     listing.raise_for_status()
     for b in listing.json().get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
-            url = b.get("downloadUrl") or b.get("url")
+            url = b.get("url") or b.get("downloadUrl")
             # The blob URL is edge-cached and list() is eventually consistent, so we
             # can't rely on uploadedAt to bust it. Use a unique-per-read token so
             # every GET misses the edge cache and hits the (consistent) origin.
