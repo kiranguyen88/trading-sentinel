@@ -377,17 +377,40 @@ def portfolio_data():
 @app.route("/storage-status")
 def storage_status():
     """TEMP diagnostic: in-process Blob round-trip with a holdings change."""
-    import trading_bot as tb, copy
+    import trading_bot as tb, copy, json as _j, requests as _rq
     out = {"blob_token_present": bool(tb._BLOB_TOKEN)}
     try:
         before = load_portfolio()
-        out["load_holdings_before"] = [h.get("ticker") for h in before.get("holdings", [])]
         test = copy.deepcopy(before)
         test["holdings"] = before.get("holdings", []) + [{"ticker": "DIAGX", "quantity": 1, "avg_buy_price": 1.0}]
-        tb._blob_save(test)
-        rt = tb._blob_load()
-        out["blob_read_holdings"] = [h.get("ticker") for h in rt.get("holdings", [])] if rt else None
-        out["load_holdings_after"] = [h.get("ticker") for h in load_portfolio().get("holdings", [])]
+        payload = _j.dumps(test, indent=2).encode("utf-8")
+
+        # raw PUT, capture response
+        put = _rq.put(f"{tb._BLOB_API}/?pathname={tb._BLOB_KEY}", data=payload,
+            headers={**tb._blob_auth(), "x-vercel-blob-access": "private",
+                     "x-allow-overwrite": "1", "x-content-type": "application/json",
+                     "x-cache-control-max-age": "0"}, timeout=15)
+        out["put_status"] = put.status_code
+        pj = put.json() if put.ok else put.text[:300]
+        out["put_resp"] = pj
+        put_url = pj.get("url") if isinstance(pj, dict) else None
+
+        # raw LIST, capture what it reports
+        lst = _rq.get(tb._BLOB_API, params={"prefix": tb._BLOB_KEY, "limit": "100"},
+                      headers=tb._blob_auth(), timeout=15).json()
+        out["list_blobs"] = [{"url": b.get("url"), "size": b.get("size"), "uploadedAt": b.get("uploadedAt")}
+                             for b in lst.get("blobs", [])]
+
+        # read via the URL the PUT just returned (authenticated, cache-busted)
+        if put_url:
+            g = _rq.get(put_url + ("&" if "?" in put_url else "?") + "_=now",
+                        headers={**tb._blob_auth(), "cache-control": "no-cache"}, timeout=15)
+            try:
+                out["read_via_put_url_holdings"] = [h.get("ticker") for h in g.json().get("holdings", [])]
+            except Exception:
+                out["read_via_put_url_status"] = g.status_code
+
+        out["blob_load_holdings"] = [h.get("ticker") for h in (tb._blob_load() or {}).get("holdings", [])]
         tb._blob_save(before)   # restore
     except Exception as e:
         out["error"] = repr(e)
