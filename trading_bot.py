@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import time
 from datetime import datetime, timezone, timedelta
 
 _GMT7 = timezone(timedelta(hours=7))
@@ -88,11 +89,11 @@ def _blob_load() -> dict | None:
     for b in listing.json().get("blobs", []):
         if b.get("pathname") == _BLOB_KEY:
             url = b.get("downloadUrl") or b.get("url")
-            # The blob URL is edge-cached, so a bare GET returns a stale copy after
-            # a save. uploadedAt changes on every write, so using it as a query
-            # param makes the URL unique per version → cache miss → fresh content.
+            # The blob URL is edge-cached and list() is eventually consistent, so we
+            # can't rely on uploadedAt to bust it. Use a unique-per-read token so
+            # every GET misses the edge cache and hits the (consistent) origin.
             sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}_cb={b.get('uploadedAt', '')}"
+            url = f"{url}{sep}_cb={time.time_ns()}"
             resp = requests.get(url, headers={**_blob_auth(), "cache-control": "no-cache"}, timeout=15)
             resp.raise_for_status()
             return json.loads(resp.content)
