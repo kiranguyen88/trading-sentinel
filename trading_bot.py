@@ -60,80 +60,68 @@ gemini_client = genai.Client(
 # Portfolio helpers
 # ---------------------------------------------------------------------------
 
-# Persist to DATA_DIR if set (Railway persistent volume), else local file.
-# NOTE: on Vercel the filesystem is ephemeral (/tmp is per-instance and wiped on
-# cold start), so file writes do NOT survive. When BLOB_READ_WRITE_TOKEN is set
-# (auto-added by creating a Blob store in the Vercel dashboard), Vercel Blob is
-# the durable source of truth and edits persist across instances/redeploys.
+# Durable storage is Supabase (Postgres) — strongly consistent, survives deploys.
+# On Vercel the filesystem is ephemeral (/tmp wiped on cold start), so the local
+# file is only a dev/offline cache. The single source of truth is one jsonb row
+# in the `app_state` table, read/written via the PostgREST API with the service
+# key (RLS is on with no policies, so only the service key can access it).
 _default_data_dir = "/tmp" if os.getenv("VERCEL") else "."
 _PORTFOLIO_PATH = os.path.join(os.getenv("DATA_DIR", _default_data_dir), "portfolio.json")
 
-_BLOB_TOKEN = os.getenv("BLOB_READ_WRITE_TOKEN")
-_BLOB_KEY = "portfolio.json"   # stable pathname in the Blob store (overwritten on save)
-_BLOB_API = "https://blob.vercel-storage.com"
-_BLOB_API_VERSION = "12"
-# The store is configured for PRIVATE access: writes set access=private, and reads
-# fetch the .private.blob.vercel-storage.com URL with the token in the auth header.
-# (The vercel_blob package hardcodes public access, so we call the API directly.)
+_SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+_SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+_SUPABASE_OK = bool(_SUPABASE_URL and _SUPABASE_KEY)
+_STATE_ID = "portfolio"   # primary key of the row holding the whole snapshot
 
 
-def _blob_auth() -> dict:
-    return {"authorization": f"Bearer {_BLOB_TOKEN}", "x-api-version": _BLOB_API_VERSION}
+def _sb_headers() -> dict:
+    return {
+        "apikey": _SUPABASE_KEY,
+        "authorization": f"Bearer {_SUPABASE_KEY}",
+        "content-type": "application/json",
+    }
 
 
-def _blob_load() -> dict | None:
-    """Read the portfolio JSON from Vercel Blob. None if absent or unavailable."""
-    listing = requests.get(_BLOB_API, params={"prefix": _BLOB_KEY, "limit": "100"},
-                           headers=_blob_auth(), timeout=15)
-    listing.raise_for_status()
-    for b in listing.json().get("blobs", []):
-        if b.get("pathname") == _BLOB_KEY:
-            url = b.get("url") or b.get("downloadUrl")
-            # The blob URL is edge-cached. The API honors the `cache=0` query param
-            # (and only that one) to bypass the CDN and read from origin storage,
-            # giving strong read-after-write consistency for private blobs.
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}cache=0"
-            resp = requests.get(url, headers={"authorization": f"Bearer {_BLOB_TOKEN}"}, timeout=15)
-            resp.raise_for_status()
-            return json.loads(resp.content)
-    return None
+def _sb_load() -> dict | None:
+    """Read the portfolio JSON from Supabase. None if absent."""
+    r = requests.get(
+        f"{_SUPABASE_URL}/rest/v1/app_state",
+        params={"id": f"eq.{_STATE_ID}", "select": "data"},
+        headers=_sb_headers(), timeout=15,
+    )
+    r.raise_for_status()
+    rows = r.json()
+    return rows[0]["data"] if rows else None
 
 
-def _blob_save(data: dict) -> None:
-    """Write the portfolio JSON to the private Blob store, overwriting the key."""
-    payload = json.dumps(data, indent=2).encode("utf-8")
-    resp = requests.put(
-        f"{_BLOB_API}/?pathname={_BLOB_KEY}",
-        data=payload,
-        headers={
-            **_blob_auth(),
-            "x-vercel-blob-access": "private",
-            "x-allow-overwrite": "1",
-            "x-content-type": "application/json",
-            "x-cache-control-max-age": "0",
-        },
+def _sb_save(data: dict) -> None:
+    """Upsert the portfolio JSON into Supabase (single row, strongly consistent)."""
+    r = requests.post(
+        f"{_SUPABASE_URL}/rest/v1/app_state",
+        params={"on_conflict": "id"},
+        headers={**_sb_headers(), "prefer": "resolution=merge-duplicates"},
+        json=[{"id": _STATE_ID, "data": data,
+               "updated_at": datetime.now(timezone.utc).isoformat()}],
         timeout=15,
     )
-    resp.raise_for_status()
+    r.raise_for_status()
 
 
 def load_portfolio() -> dict:
-    # 0. Vercel Blob — durable source of truth when configured.
-    if _BLOB_TOKEN:
+    # 0. Supabase — durable source of truth when configured.
+    if _SUPABASE_OK:
         try:
-            data = _blob_load()
+            data = _sb_load()
             if data:
                 return data
         except Exception as e:
-            print(f"[portfolio] Blob load failed, falling back: {e}")
+            print(f"[portfolio] Supabase load failed, falling back: {e}")
 
-    # 1. Persistent volume / local file written by save_portfolio
+    # 1. Local file (dev / offline cache)
     if os.path.exists(_PORTFOLIO_PATH):
         try:
             with open(_PORTFOLIO_PATH) as f:
                 data = json.load(f)
-            # If this has real customisation (non-null watchlist entries), trust it over the env-var snapshot.
             wl = data.get("watchlist", [])
             has_custom = any(
                 isinstance(w, dict) and (w.get("entry") or w.get("stop") or w.get("notes"))
@@ -144,12 +132,12 @@ def load_portfolio() -> dict:
         except Exception:
             pass
 
-    # 2. PORTFOLIO_JSON env var — set this in Railway Variables to survive redeploys
+    # 2. PORTFOLIO_JSON env var (legacy)
     env_json = os.getenv("PORTFOLIO_JSON")
     if env_json:
         try:
             data = json.loads(env_json)
-            save_portfolio(data)   # seeds the Blob (and local cache) from the env snapshot
+            save_portfolio(data)
             return data
         except Exception:
             pass
@@ -157,24 +145,23 @@ def load_portfolio() -> dict:
     # 3. Bundled defaults (portfolio.json committed in git)
     with open("portfolio.json") as f:
         data = json.load(f)
-    if _BLOB_TOKEN:
+    if _SUPABASE_OK:
         try:
-            _blob_save(data)       # seed the Blob so the first edit has a baseline
+            _sb_save(data)         # seed the DB so the first edit has a baseline
         except Exception as e:
-            print(f"[portfolio] Blob seed failed: {e}")
+            print(f"[portfolio] Supabase seed failed: {e}")
     return data
 
 
 def save_portfolio(data: dict) -> None:
-    # Durable store first (Vercel). Raise on failure so callers can report it
-    # instead of silently losing the user's edit.
-    blob_ok = False
-    if _BLOB_TOKEN:
-        _blob_save(data)
-        blob_ok = True
+    # Durable store first. Raise on failure so callers can report it instead of
+    # silently losing the user's edit.
+    db_ok = False
+    if _SUPABASE_OK:
+        _sb_save(data)
+        db_ok = True
 
-    # Local file: source of truth off-Vercel (Railway volume / local dev),
-    # ephemeral cache on Vercel. Best-effort only when the Blob save succeeded.
+    # Local file: source of truth for local dev, ephemeral cache on Vercel.
     try:
         dir_ = os.path.dirname(_PORTFOLIO_PATH)
         if dir_:
@@ -182,7 +169,7 @@ def save_portfolio(data: dict) -> None:
         with open(_PORTFOLIO_PATH, "w") as f:
             json.dump(data, f, indent=2)
     except Exception:
-        if not blob_ok:
+        if not db_ok:
             raise   # nothing persisted anywhere → a real failure
 
 
