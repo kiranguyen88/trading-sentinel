@@ -256,9 +256,9 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
                 "ma200": round(ma200, 4) if ma200 else None,
             },
             "volume": {
-                "today":   int(today_vol),
-                "avg_20d": int(avg_vol),
-                "ratio":   round(today_vol / avg_vol if avg_vol else 1.0, 2),
+                "today":   int(today_vol) if today_vol and not math.isnan(today_vol) else 0,
+                "avg_20d": int(avg_vol)   if avg_vol   and not math.isnan(avg_vol)   else 0,
+                "ratio":   round(today_vol / avg_vol if avg_vol and not math.isnan(avg_vol) else 1.0, 2),
             },
             "week_52": {"high": w52_high, "low": w52_low},
         }
