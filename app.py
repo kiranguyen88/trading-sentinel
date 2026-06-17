@@ -334,11 +334,6 @@ def daily_digest():
 @app.route("/suggest-watchlist", methods=["POST"])
 def suggest_watchlist():
     result = ai_suggest_watchlist(top_n_final=6)
-    suggestions = result.get("suggestions", [])
-    if suggestions:
-        p = load_portfolio()
-        p["watchlist"] = [s["ticker"] for s in suggestions]
-        save_portfolio(p)
     return jsonify(result)
 
 

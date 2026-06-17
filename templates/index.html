@@ -936,12 +936,11 @@ Quick starts:
           text += `   📈 Tech: ${s.technical_reason}\n`;
           text += `   📰 News: ${s.news_catalyst}\n\n`;
         });
-        text += `✅ Watchlist updated in sidebar. Click any ticker for detailed analysis.`;
+        text += `💡 These are suggestions only — your watchlist is unchanged. Add tickers manually via the Edit button.`;
         scanMsg.querySelector('.bubble').innerHTML = marked.parse(text);
       }
 
       scrollToBottom();
-      loadWatchlist(); // Refresh sidebar
     } catch(e) {
       scanMsg.querySelector('.bubble').textContent = '⚠️ Screener failed. Please try again.';
     }
