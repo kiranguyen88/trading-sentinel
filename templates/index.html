@@ -1331,26 +1331,23 @@ Quick starts:
     if (dot) dot.className = online ? '' : 'offline';
   }
 
-  let _sse = null, _sseRetryMs = 1000;
-  function startPriceStream() {
-    if (_sse) { try { _sse.close(); } catch(_) {} }
-    _sse = new EventSource('/api/stream/prices');
-    _sse.onopen = () => { _setSseDot(true); _sseRetryMs = 1000; };
-    _sse.onmessage = e => {
-      try { const d = JSON.parse(e.data); if (Array.isArray(d)) applyPriceUpdate(d); } catch(_) {}
-    };
-    _sse.onerror = () => {
-      _sse.close();
+  async function fetchPrices() {
+    try {
+      const r = await fetch('/api/prices');
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      if (Array.isArray(d)) applyPriceUpdate(d);
+      _setSseDot(true);
+    } catch(_) {
       _setSseDot(false);
-      setTimeout(startPriceStream, _sseRetryMs);
-      _sseRetryMs = Math.min(_sseRetryMs * 2, 30000);
-    };
+    }
   }
 
   // Init
   loadPortfolio();
   loadWatchlist();
-  startPriceStream();
+  fetchPrices();                                     // immediate first fetch
+  setInterval(fetchPrices,         30000);           // price poll: 30 s
   setInterval(() => { loadWatchlist(); },  60000);   // watchlist: 60 s poll
   setInterval(() => { loadPortfolio(); }, 300000);   // full portfolio refresh: 5 min
 

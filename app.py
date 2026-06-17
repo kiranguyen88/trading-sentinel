@@ -301,34 +301,15 @@ def portfolio():
         return jsonify([]), 503
 
 
-@app.route("/api/stream/prices")
-def stream_prices():
-    """SSE endpoint — each connection independently fetches and streams live prices.
-
-    On Vercel the function runs until maxDuration, then the browser's EventSource
-    reconnects automatically (no data loss, just a brief gap between ticks).
-    """
-    def generate():
-        # Serve whatever we have cached immediately so the client doesn't wait 15s
-        if _fast_prices:
-            yield f"data: {json.dumps(list(_fast_prices.values()))}\n\n"
-        while True:
-            try:
-                prices = _fetch_live_prices()
-                if prices:
-                    yield f"data: {json.dumps(prices)}\n\n"
-                else:
-                    yield ": heartbeat\n\n"
-            except Exception as e:
-                print(f"[SSE] {e}")
-                yield ": heartbeat\n\n"
-            _time.sleep(15)
-
-    return Response(
-        generate(),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+@app.route("/api/prices")
+def get_prices():
+    """Short-lived JSON endpoint — client polls every 30 s instead of holding an SSE connection."""
+    try:
+        prices = _fetch_live_prices()
+        return jsonify(prices)
+    except Exception as e:
+        print(f"[prices] {e}")
+        return jsonify(list(_fast_prices.values()))
 
 
 @app.route("/watchlist")

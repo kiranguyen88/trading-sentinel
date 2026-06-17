@@ -188,7 +188,9 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
         if hist.empty:
             return {"error": f"No data for {ticker}", "ticker": ticker}
 
-        close = hist["Close"]
+        close = hist["Close"].dropna()
+        if close.empty:
+            return {"error": f"No price data for {ticker}", "ticker": ticker}
         current_price  = float(close.iloc[-1])
         prev_close     = float(close.iloc[-2]) if len(close) > 1 else current_price
         day_change_pct = (current_price - prev_close) / prev_close * 100
@@ -197,7 +199,8 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
         delta = close.diff()
         gain  = delta.clip(lower=0).rolling(14).mean()
         loss  = (-delta.clip(upper=0)).rolling(14).mean()
-        rsi   = float((100 - 100 / (1 + gain / loss)).iloc[-1])
+        rsi_raw = (100 - 100 / (1 + gain / loss)).iloc[-1]
+        rsi   = float(rsi_raw) if not math.isnan(rsi_raw) else None
 
         # MACD(12,26,9)
         ema12  = close.ewm(span=12, adjust=False).mean()
@@ -237,7 +240,7 @@ def get_stock_data(ticker: str, period: str = "3mo") -> dict:
             "day_change_pct": round(day_change_pct, 2),
             "change_1m_pct": change_1m,
             "change_3m_pct": change_3m,
-            "rsi_14": round(rsi, 2),
+            "rsi_14": round(rsi, 2) if rsi is not None else None,
             "macd": {
                 "macd":     round(float(macd.iloc[-1]), 4),
                 "signal":   round(float(signal.iloc[-1]), 4),
