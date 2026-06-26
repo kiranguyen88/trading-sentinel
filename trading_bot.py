@@ -444,6 +444,61 @@ def _send_discord_alert_tool(message: str) -> dict:
     """Send an urgent alert to the trader via Discord when warning conditions are detected."""
     return {"sent": send_alert(message), "message": message}
 
+
+def serpapi_finance(ticker: str, exchange: str = "NASDAQ") -> dict:
+    """Fetch a Google-Finance snapshot for cross-source verification.
+
+    Independent source from yfinance — pairs well with /verify and /swing.
+    Returns a trimmed dict (price, day range, 52w range, market cap, P/E,
+    related news headlines, related stocks). Skips silently if SERPAPI_KEY
+    is unset, so the bot still works without it.
+    """
+    key = os.environ.get("SERPAPI_KEY", "").strip()
+    if not key:
+        return {"error": "SERPAPI_KEY not configured", "source": "serpapi"}
+
+    q = f"{ticker.upper()}:{exchange.upper()}"
+    try:
+        r = requests.get(
+            "https://serpapi.com/search",
+            params={"engine": "google_finance", "q": q, "api_key": key},
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        return {"error": f"SerpApi request failed: {e}", "source": "serpapi"}
+
+    summary = data.get("summary") or {}
+    kg = data.get("knowledge_graph") or {}
+    return {
+        "source": "serpapi.google_finance",
+        "query": q,
+        "price": summary.get("price") or kg.get("price"),
+        "currency": summary.get("currency"),
+        "extracted_price": summary.get("extracted_price"),
+        "price_movement": summary.get("price_movement"),
+        "exchange": summary.get("exchange") or summary.get("stock"),
+        "about": kg.get("about"),
+        "key_stats": kg.get("key_stats") or {},
+        "related_news": [
+            {"title": n.get("title"), "source": n.get("source"), "date": n.get("date"), "link": n.get("link")}
+            for n in (data.get("news_results") or [])[:5]
+        ],
+        "related_stocks": [
+            {"ticker": s.get("stock"), "name": s.get("name"), "price": s.get("price"), "movement": s.get("price_movement")}
+            for s in (data.get("discover_more") or data.get("related_stocks") or [])[:6]
+        ],
+    }
+
+
+def _serpapi_finance_tool(ticker: str, exchange: str = "NASDAQ") -> dict:
+    """Fetch Google Finance snapshot via SerpApi — INDEPENDENT source from yfinance.
+    Use this as the second source for /verify cross-checks, or to pull related-stocks
+    and same-day news for /swing setup analysis. Exchange is usually NASDAQ or NYSE."""
+    return serpapi_finance(ticker, exchange)
+
+
 GEMINI_TOOLS = [
     _get_stock_data_tool,
     _get_portfolio_snapshot_tool,
@@ -452,6 +507,7 @@ GEMINI_TOOLS = [
     _get_all_tickers_report_tool,
     _get_market_news_tool,
     _send_discord_alert_tool,
+    _serpapi_finance_tool,
 ]
 
 
@@ -654,6 +710,8 @@ def _run_tool(name: str, args: dict) -> str:
         raw = get_market_news(args.get("query",""), args.get("max_articles",6))
     elif name in ("_send_discord_alert_tool", "send_discord_alert"):
         raw = {"sent": send_alert(args.get("message", "")), "message": args.get("message", "")}
+    elif name in ("_serpapi_finance_tool", "serpapi_finance"):
+        raw = serpapi_finance(args.get("ticker", ""), args.get("exchange", "NASDAQ"))
     else:
         raw = {"error": f"Unknown tool: {name}"}
     return json.dumps(raw, default=str)
@@ -663,8 +721,99 @@ def _run_tool(name: str, args: dict) -> str:
 # Streaming chat with Gemini tool use
 # ---------------------------------------------------------------------------
 
+SWING_RESEARCH_PROMPT = """Run a **4-persona swing-trade research** on **__TICKER__** and produce a single Trade Card. Use get_stock_data / get_ticker_full_report / get_market_news for indicators and news, and **call serpapi_finance once** to pull Google-Finance related-stocks (sector peers) and cross-check the current price. Do NOT guess any number.
+
+Reason internally as each persona in turn, then synthesize. Do NOT print each persona's reasoning in the final output — only the synthesized Trade Card.
+
+**Persona A — Weinstein Stage Analyst**
+Classify the weekly stage (1 base, 2 advance, 3 top, 4 decline). Check price vs 30-week MA (proxy: MA150 daily) — slope and position.
+
+**Persona B — Minervini Setup Hunter**
+Look for VCP / flat base / cup-handle / high-tight flag. Identify trigger price and required volume (≥1.5× 20-day avg). Score the Trend Template (8 criteria): price > 50MA > 150MA > 200MA, 200MA rising, price ≥ 25% above 52w low, within 25% of 52w high.
+
+**Persona C — O'Neil CANSLIM / Catalyst Scout**
+Score C-A-N-S-L-I-M letter by letter (Strong / Mixed / Weak). Note any catalyst (earnings, news, upgrade) within 0–60 days.
+
+**Persona D — Risk Skeptic (adversarial)**
+Argue the bear case for the next 4 weeks. Flag if extended >10% from 21-EMA, earnings within hold window, macro events, distribution days. Set the stop-loss that invalidates the setup.
+
+**Hard rules** — REJECT the trade (verdict = Skip) if any of these fail:
+- R:R < 2.0
+- Weinstein Stage 4
+- Trend Template fails by 3+ criteria
+- Buying inside last 3 days before earnings (unless user explicitly wants an earnings play)
+
+**Output format (markdown, exactly this shape):**
+
+### __TICKER__ — Swing Research
+
+**Setup Grade:** A / B / C / Pass
+**Stage:** {weinstein stage}
+**Pattern:** {VCP / flat base / cup-handle / breakout / extended / none}
+
+| Field | Value |
+|---|---|
+| Trigger | $X |
+| Stop | $X |
+| Target 1 | $X |
+| Target 2 | $X |
+| R:R | x.x |
+| Position size (1% risk) | N shares |
+| Time stop | N days |
+| Catalyst window | earnings date / event / none |
+
+**Verdict:** Take / Watch / Skip — one-sentence reason.
+
+**Key risks:**
+- risk 1
+- risk 2
+- risk 3
+"""
+
+VERIFY_DATA_PROMPT = """Verify the following financial claim by cross-checking ≥2 independent sources. Use the available tools (get_stock_data, get_market_news) plus your knowledge of canonical sources.
+
+Claim: **__CLAIM__**
+
+Rules:
+- Two pages of the same site = ONE source. Need two different organizations.
+- For price / market-cap / 52w-range claims: use **get_stock_data (yfinance)** as source 1 and **serpapi_finance (Google Finance)** as source 2 — these are independent organizations.
+- If sources disagree by >1%, do NOT pick the more plausible one — fetch a third and report all three.
+- Never cite Reddit/Twitter/Stocktwits or another LLM as a primary source.
+
+Output:
+
+### Verification: __CLAIM__
+
+| Source | Value | As of |
+|---|---|---|
+| source 1 | ... | timestamp |
+| source 2 | ... | timestamp |
+
+**Delta:** x.xx%  ✓ within 1%   /   ⚠ outside 1%
+**Verified value:** {value with caveats if any}
+"""
+
+
+def expand_slash_command(message: str) -> str:
+    """Rewrite /swing TICKER and /verify <claim> into full research prompts.
+
+    Any other message (including /unknown) is returned untouched.
+    """
+    msg = message.strip()
+    if msg.lower().startswith("/swing "):
+        ticker = msg.split(None, 1)[1].strip().upper().split()[0]
+        if ticker:
+            return SWING_RESEARCH_PROMPT.replace("__TICKER__", ticker)
+    elif msg.lower().startswith("/verify "):
+        claim = msg.split(None, 1)[1].strip()
+        if claim:
+            return VERIFY_DATA_PROMPT.replace("__CLAIM__", claim)
+    return message
+
+
 def chat_stream(user_message: str, history: list[dict]):
     """Yields SSE strings. Runs Gemini tool-use loop with streaming."""
+    user_message = expand_slash_command(user_message)
     try:
         yield from _chat_stream_inner(user_message, history)
     except Exception as e:
