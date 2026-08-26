@@ -59,7 +59,7 @@ def _cached_fetch(key, fetch_fn):
 # ---------------------------------------------------------------------------
 # Live price fetching — each SSE connection fetches independently (no shared thread)
 # ---------------------------------------------------------------------------
-_fast_prices: dict = {}   # ticker -> last known price payload; scoped to this process instance
+_fast_prices: dict = {}   # "TICKER#lot" (holdings) or "TICKER" (watchlist) -> last known payload
 
 def _fetch_live_prices() -> list:
     """Batch-fetch latest price + day-change for portfolio holdings AND watchlist."""
@@ -101,9 +101,9 @@ def _fetch_live_prices() -> list:
                 print(f"[LivePrice] {t}: {e}")
                 return None, None, None
 
-        results = []
+        fresh = {}
 
-        for h in holdings:
+        for i, h in enumerate(holdings):
             t = h["ticker"]
             current, day_pct, prev_close = _price_and_chg(t)
             if current is None:
@@ -111,14 +111,14 @@ def _fetch_live_prices() -> list:
             payload = {
                 "type":             "portfolio",
                 "ticker":           t,
+                "lot":              i,
                 "current_price":    round(current, 2),
                 "day_change_pct":   day_pct,
                 "day_change_dollar":round(current - prev_close, 2),
                 "unrealized_pnl":   round((current - h["avg_buy_price"]) * h["quantity"], 2),
                 "pnl_pct":          round((current - h["avg_buy_price"]) / h["avg_buy_price"] * 100, 2),
             }
-            results.append(payload)
-            _fast_prices[t] = payload
+            fresh[f"{t}#{i}"] = payload
 
         for t in wl_tickers:
             if t in holding_set:
@@ -126,17 +126,16 @@ def _fetch_live_prices() -> list:
             current, day_pct, prev_close = _price_and_chg(t)
             if current is None:
                 continue
-            payload = {
+            fresh[t] = {
                 "type":             "watchlist",
                 "ticker":           t,
                 "current_price":    round(current, 2),
                 "day_change_pct":   day_pct,
                 "day_change_dollar":round(current - prev_close, 2),
             }
-            results.append(payload)
-            _fast_prices[t] = payload
 
-        return results
+        _fast_prices = fresh
+        return list(fresh.values())
     except Exception as e:
         print(f"[LivePrice] batch error: {e}")
         return list(_fast_prices.values())

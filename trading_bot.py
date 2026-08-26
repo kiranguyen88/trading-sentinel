@@ -276,8 +276,9 @@ def get_portfolio_snapshot() -> list:
     if not holdings:
         return []
 
-    def fetch(h):
+    def fetch(h, lot):
         data = get_stock_data(h["ticker"], period="1mo")
+        data["lot"] = lot   # position in holdings[]; disambiguates duplicate tickers
         if "error" not in data:
             data["quantity"]       = h["quantity"]
             data["avg_buy_price"]  = h["avg_buy_price"]
@@ -290,7 +291,7 @@ def get_portfolio_snapshot() -> list:
         return data
 
     with ThreadPoolExecutor(max_workers=4) as ex:
-        futures = {ex.submit(fetch, h): i for i, h in enumerate(holdings)}
+        futures = {ex.submit(fetch, h, i): i for i, h in enumerate(holdings)}
         results = [None] * len(holdings)
         for future in as_completed(futures):
             results[futures[future]] = future.result()

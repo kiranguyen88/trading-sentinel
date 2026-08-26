@@ -666,8 +666,9 @@ Quick starts:
     const el = document.getElementById('holdings');
     if (!holdings || holdings.length === 0) { el.innerHTML = '<div style="padding:12px;color:var(--muted)">No holdings</div>'; return; }
 
-    el.innerHTML = holdings.map(h => {
-      if (h.error) return `<div class="holding-card card-loss" data-ticker="${h.ticker||'?'}">
+    el.innerHTML = holdings.map((h, idx) => {
+      const lot = h.lot != null ? h.lot : idx;
+      if (h.error) return `<div class="holding-card card-loss" data-ticker="${h.ticker||'?'}" data-lot="${lot}">
         <div class="card-row1">
           <span class="card-ticker">${h.ticker||'?'}<span class="card-shares">${h.quantity||''}sh</span></span>
           <span class="card-price" style="color:var(--muted)">N/A</span>
@@ -694,7 +695,7 @@ Quick starts:
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
       const pnlSign     = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
 
-      return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
+      return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" data-lot="${lot}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="card-row1">
           <span class="card-ticker">${h.ticker}<span class="card-shares">${h.quantity}sh</span></span>
           <span class="card-price" data-field="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
@@ -1267,7 +1268,9 @@ Quick starts:
         : Math.abs((p.current_price||0) * chgPct / (100 + chgPct));
 
       // ── Portfolio holding cards ──
-      const card = document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
+      const card = p.lot != null
+        ? document.querySelector(`.holding-card[data-ticker="${p.ticker}"][data-lot="${p.lot}"]`)
+        : document.querySelector(`.holding-card[data-ticker="${p.ticker}"]`);
       if (card) {
         const pnlPct   = p.pnl_pct || 0;
         const pnlSign  = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
@@ -1289,7 +1292,9 @@ Quick starts:
 
         // Keep _lastPortfolio in sync so charts stay current
         if (_lastPortfolio) {
-          const h = _lastPortfolio.find(h => h.ticker === p.ticker);
+          const h = p.lot != null
+            ? _lastPortfolio.find((x, i) => (x.lot != null ? x.lot : i) === p.lot)
+            : _lastPortfolio.find(x => x.ticker === p.ticker);
           if (h) {
             h.current_price  = p.current_price;
             h.day_change_pct = p.day_change_pct;
