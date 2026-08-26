@@ -112,6 +112,7 @@ def _fetch_live_prices() -> list:
                 "type":             "portfolio",
                 "ticker":           t,
                 "lot":              i,
+                "quantity":         h["quantity"],
                 "current_price":    round(current, 2),
                 "day_change_pct":   day_pct,
                 "day_change_dollar":round(current - prev_close, 2),

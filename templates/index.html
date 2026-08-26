@@ -683,19 +683,22 @@ Quick starts:
       const chgPct   = h.day_change_pct || 0;
       const pnlClass = pnlPct > 0 ? 'up' : pnlPct < 0 ? 'down' : 'neutral';
       const dayClass = chgPct > 0 ? 'up' : chgPct < 0 ? 'down' : 'neutral';
-      const dayDollar = h.day_change_dollar != null
-        ? Math.abs(h.day_change_dollar)
-        : Math.abs((h.current_price || 0) * chgPct / (100 + chgPct));
+      // day_change_dollar is per share — scale to the position so it lines up
+      // with the unrealized P&L dollars shown on the row below
+      const perShare  = h.day_change_dollar != null
+        ? h.day_change_dollar
+        : (h.current_price || 0) * chgPct / (100 + chgPct);
+      const dayValue  = Math.abs(perShare * (h.quantity || 0));
       const daySign = chgPct > 0 ? '+' : chgPct < 0 ? '-' : '';
       const dayStr = h.day_change_pct != null
-        ? `${daySign}$${dayDollar.toFixed(2)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`
+        ? `${daySign}$${_fmt(dayValue, 0)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`
         : '--';
 
       const isProfitable = pnlPct >= 0;
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
       const pnlSign     = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
 
-      return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" data-lot="${lot}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
+      return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" data-lot="${lot}" data-qty="${h.quantity || 0}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="card-row1">
           <span class="card-ticker">${h.ticker}<span class="card-shares">${h.quantity}sh</span></span>
           <span class="card-price" data-field="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
@@ -1262,10 +1265,11 @@ Quick starts:
       const chgPct   = p.day_change_pct || 0;
       const daySign  = chgPct > 0 ? '+' : chgPct < 0 ? '-' : '';
       const dayClass = chgPct > 0 ? 'up' : chgPct < 0 ? 'down' : 'neutral';
-      // Use server-supplied dollar change if available, else calculate
-      const dayDollar = p.day_change_dollar != null
-        ? Math.abs(p.day_change_dollar)
-        : Math.abs((p.current_price||0) * chgPct / (100 + chgPct));
+      // Server-supplied dollar change if available, else derive it. Per share —
+      // holding cards scale it by quantity, watchlist rows show pct only.
+      const perShare = p.day_change_dollar != null
+        ? p.day_change_dollar
+        : (p.current_price||0) * chgPct / (100 + chgPct);
 
       // ── Portfolio holding cards ──
       const card = p.lot != null
@@ -1275,7 +1279,10 @@ Quick starts:
         const pnlPct   = p.pnl_pct || 0;
         const pnlSign  = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
         const pnlClass = pnlPct > 0 ? 'up' : pnlPct < 0 ? 'down' : 'neutral';
-        const dayStr   = `${daySign}$${dayDollar.toFixed(2)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`;
+        const qty      = p.quantity != null ? p.quantity
+                       : +(card.dataset.qty || 0);
+        const dayValue = Math.abs(perShare * qty);
+        const dayStr   = `${daySign}$${_fmt(dayValue, 0)} (${daySign}${Math.abs(chgPct).toFixed(2)}%)`;
         const pnlStr   = `${pnlSign}$${_fmt(Math.abs(p.unrealized_pnl||0),0)} (${pnlSign}${Math.abs(pnlPct).toFixed(1)}%)`;
         const priceEl  = card.querySelector('[data-field="price"]');
         const dayEl    = card.querySelector('[data-field="day"]');
@@ -1298,6 +1305,7 @@ Quick starts:
           if (h) {
             h.current_price  = p.current_price;
             h.day_change_pct = p.day_change_pct;
+            h.day_change_dollar = p.day_change_dollar;
             h.unrealized_pnl = p.unrealized_pnl;
             h.pnl_pct        = p.pnl_pct;
             portfolioUpdated = true;
