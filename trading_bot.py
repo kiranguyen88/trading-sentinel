@@ -85,16 +85,31 @@ def _sb_headers() -> dict:
     }
 
 
-def _sb_load() -> dict | None:
-    """Read the portfolio JSON from Supabase. None if absent."""
-    r = requests.get(
-        f"{_SUPABASE_URL}/rest/v1/app_state",
-        params={"id": f"eq.{_STATE_ID}", "select": "data"},
-        headers=_sb_headers(), timeout=15,
-    )
-    r.raise_for_status()
-    rows = r.json()
-    return rows[0]["data"] if rows else None
+def _sb_load(attempts: int = 3) -> dict | None:
+    """Read the portfolio JSON from Supabase.
+
+    Returns the stored dict, or None when the row genuinely does not exist.
+    Raises if Supabase could not be reached after `attempts` tries — the
+    caller MUST treat that as "unknown", never as "empty", because the two
+    are indistinguishable to a naive caller and only one of them is safe to
+    overwrite.
+    """
+    last_err = None
+    for i in range(attempts):
+        try:
+            r = requests.get(
+                f"{_SUPABASE_URL}/rest/v1/app_state",
+                params={"id": f"eq.{_STATE_ID}", "select": "data"},
+                headers=_sb_headers(), timeout=15,
+            )
+            r.raise_for_status()
+            rows = r.json()
+            return rows[0]["data"] if rows else None
+        except Exception as e:
+            last_err = e
+            if i < attempts - 1:
+                time.sleep(0.5 * (2 ** i))
+    raise last_err
 
 
 def _sb_save(data: dict) -> None:
@@ -110,27 +125,41 @@ def _sb_save(data: dict) -> None:
     r.raise_for_status()
 
 
+# Last value successfully read out of Supabase in this process. Used as the
+# fallback when Supabase is briefly unreachable, so a blip cannot demote a warm
+# instance all the way down to the bundled seed.
+_last_good_portfolio: dict | None = None
+
+
 def load_portfolio() -> dict:
+    """Read the portfolio. NEVER writes — a read path that can write is how the
+    live portfolio got replaced by the bundled seed (a single Supabase timeout
+    was enough). Seeding happens only in seed_portfolio_if_empty()."""
+    global _last_good_portfolio
+
     # 0. Supabase — durable source of truth when configured.
     if _SUPABASE_OK:
         try:
             data = _sb_load()
             if data:
+                _last_good_portfolio = data
                 return data
+            # Reached Supabase and the row is genuinely absent: fall through to
+            # the local/env/seed chain, but still without writing anything.
+            print("[portfolio] Supabase reachable but app_state row is empty")
         except Exception as e:
-            print(f"[portfolio] Supabase load failed, falling back: {e}")
+            # Unreachable != empty. Serve the best thing we already have and
+            # leave the stored row completely untouched.
+            print(f"[portfolio] Supabase unreachable, serving cached copy: {e}")
+            if _last_good_portfolio:
+                return _last_good_portfolio
 
-    # 1. Local file (dev / offline cache)
+    # 1. Local file (dev source of truth; ephemeral cache on Vercel)
     if os.path.exists(_PORTFOLIO_PATH):
         try:
             with open(_PORTFOLIO_PATH) as f:
                 data = json.load(f)
-            wl = data.get("watchlist", [])
-            has_custom = any(
-                isinstance(w, dict) and (w.get("entry") or w.get("stop") or w.get("notes"))
-                for w in wl
-            )
-            if has_custom:
+            if data.get("holdings") or data.get("watchlist"):
                 return data
         except Exception:
             pass
@@ -139,21 +168,30 @@ def load_portfolio() -> dict:
     env_json = os.getenv("PORTFOLIO_JSON")
     if env_json:
         try:
-            data = json.loads(env_json)
-            save_portfolio(data)
-            return data
+            return json.loads(env_json)
         except Exception:
             pass
 
-    # 3. Bundled defaults (portfolio.json committed in git)
+    # 3. Bundled defaults (portfolio.json committed in git) — served, not stored.
+    with open("portfolio.json") as f:
+        return json.load(f)
+
+
+def seed_portfolio_if_empty() -> bool:
+    """Write the bundled defaults to Supabase only if the row is truly absent.
+
+    Explicit and separate from load_portfolio() so no read path can ever write.
+    Returns True if a seed was written. Any Supabase error aborts the seed.
+    """
+    if not _SUPABASE_OK:
+        return False
+    if _sb_load():             # raises if unreachable — abort rather than guess
+        return False
     with open("portfolio.json") as f:
         data = json.load(f)
-    if _SUPABASE_OK:
-        try:
-            _sb_save(data)         # seed the DB so the first edit has a baseline
-        except Exception as e:
-            print(f"[portfolio] Supabase seed failed: {e}")
-    return data
+    _sb_save(data)
+    print("[portfolio] seeded empty app_state row with bundled defaults")
+    return True
 
 
 def save_portfolio(data: dict) -> None:
