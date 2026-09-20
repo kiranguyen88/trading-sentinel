@@ -13,10 +13,12 @@ from flask import (
     url_for,
 )
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
     run_daily_digest, load_portfolio, save_portfolio, send_alert, get_stock_data, get_market_news,
     get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
+    get_premarket_snapshot, get_index_futures, get_earnings_dates, get_fresh_news,
     set_current_user, current_user_id,
     _yf_session,
 )
@@ -317,6 +319,162 @@ def auto_scan_watchlist():
 
 
 # ---------------------------------------------------------------------------
+# Pre-open scan — what the portfolio is walking into before the bell
+# ---------------------------------------------------------------------------
+
+# Below this, an overnight move is noise: liquid names drift a few tenths of a
+# percent on no news at all, and flagging that trains you to ignore the alert.
+_PREMARKET_GAP_PCT       = float(os.getenv("PREMARKET_GAP_PCT", "2"))
+# Earnings this close are worth flagging even on a flat premarket.
+_PREMARKET_EARNINGS_DAYS = int(os.getenv("PREMARKET_EARNINGS_DAYS", "2"))
+
+
+def run_premarket_scan(force: bool = False) -> str:
+    """Pre-open sweep of the holdings — gaps, earnings and fresh headlines.
+
+    One Discord message for the whole portfolio, not one per ticker. Before the
+    open the question is "what am I walking into today", and eight separate
+    pings answer it worse than one ordered list does.
+
+    Returns the text it sent, or the reason it sent nothing, so /premarket-now
+    can show the same thing in the browser.
+    """
+    global _sent_alerts
+
+    holdings = load_portfolio().get("holdings", [])
+    if not holdings:
+        return "No holdings to scan."
+
+    # Duplicate tickers collapse into one position. Holdings are one row per
+    # ticker today, but the brief should talk about the position either way —
+    # "NVDA lot 0" and "NVDA lot 3" as separate bullets help nobody at 8am.
+    positions: dict = {}
+    for h in holdings:
+        positions[h["ticker"]] = positions.get(h["ticker"], 0.0) + _num(h.get("quantity"))
+
+    tickers = sorted(positions)
+    quotes  = get_premarket_snapshot(tickers)
+    priced  = {t: q for t, q in quotes.items() if q.get("gap_pct") is not None}
+
+    if not priced and not force:
+        # Nothing printed a bar dated today: weekend, market holiday, or the
+        # feed is down. None of those have anything to say about this morning,
+        # and a brief built on yesterday's numbers would read as today's.
+        print("[Premarket] no pre-open prints — skipping")
+        return "No pre-open prices available (market holiday or feed down)."
+
+    # Dollars are the number that matters before the open — a 6% gap on a tiny
+    # position is a headline, not a problem, and the reverse is worse.
+    impact     = sum((priced[t]["pre_price"] - priced[t]["prev_close"]) * positions[t]
+                     for t in priced)
+    base       = sum(priced[t]["prev_close"] * positions[t] for t in priced)
+    impact_pct = (impact / base * 100) if base else 0.0
+
+    movers = sorted((t for t in priced if abs(priced[t]["gap_pct"]) >= _PREMARKET_GAP_PCT),
+                    key=lambda t: abs(priced[t]["gap_pct"]), reverse=True)
+
+    today    = datetime.now(_ET).date()
+    earnings = get_earnings_dates(tickers)
+    due      = {t: d for t, d in earnings.items()
+                if d and 0 <= (d - today).days <= _PREMARKET_EARNINGS_DAYS}
+
+    # News is fetched for the movers only. Yahoo's per-ticker feed carries a lot
+    # of evergreen filler; pairing a headline with a gap is what makes it worth
+    # reading, and a gap with no headline under it is itself the warning.
+    news = {}
+    top  = movers[:6]
+    if top:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            news = dict(zip(top, ex.map(lambda t: get_fresh_news(t, 16, 2), top)))
+
+    index_futures = get_index_futures()
+
+    now_et = datetime.now(_ET)
+    now_vn = datetime.now(_GMT7)
+    lines  = [f"🌅 *Premarket — {now_et.strftime('%a %b %d')}* "
+              f"({now_et.strftime('%H:%M')} ET / {now_vn.strftime('%H:%M')} GMT+7)\n"]
+
+    if priced:
+        # The newest bar behind these numbers. Pre-open prints can lag by several
+        # minutes on thin names, and a stale quote is worth knowing about before
+        # you act on a gap.
+        last_bar = max((q["as_of"] for q in priced.values() if q.get("as_of")), default=None)
+        lines.append(f"Portfolio impact: {'+' if impact >= 0 else '-'}${abs(impact):,.0f} "
+                     f"({impact_pct:+.2f}%) vs last close"
+                     + (f"  ·  last print {last_bar}" if last_bar else ""))
+    else:
+        lines.append("No pre-open prints for any holding — market closed, or the "
+                     "price feed is down.")
+
+    if movers:
+        lines.append("\n== MOVERS ==")
+        for t in movers:
+            q       = priced[t]
+            dollars = (q["pre_price"] - q["prev_close"]) * positions[t]
+            arrow   = "🔺" if q["gap_pct"] > 0 else "🔻"
+            lines.append(f"{arrow} *{t}* ${q['pre_price']:,.2f} ({q['gap_pct']:+.2f}%) "
+                         f"| {'+' if dollars >= 0 else '-'}${abs(dollars):,.0f} "
+                         f"| {positions[t]:g} sh")
+            for art in news.get(t, []):
+                lines.append(f"    · {art['title'][:110]}")
+
+    if due:
+        lines.append("\n== EARNINGS ==")
+        for t, d in sorted(due.items(), key=lambda kv: kv[1]):
+            days = (d - today).days
+            when = "TODAY" if days == 0 else ("tomorrow" if days == 1 else d.strftime("%a %b %d"))
+            lines.append(f"📅 *{t}* reports {when}")
+
+    rest = [t for t in priced if t not in set(movers)]
+    if rest:
+        lines.append("\n== REST ==")
+        lines.append(" | ".join(f"{t} {priced[t]['gap_pct']:+.1f}%" for t in sorted(rest)))
+
+    missing = [t for t in tickers if t not in priced]
+    if missing:
+        lines.append(f"\n⚠️ No pre-open print: {', '.join(missing)}")
+
+    if index_futures:
+        lines.append("\n== MARKET ==")
+        lines.append(" | ".join(f"{v['label']} {v['price']:,.2f} ({v['change_pct']:+.2f}%)"
+                                for v in index_futures.values()))
+
+    material = bool(
+        movers or due
+        or abs(impact_pct) >= _PREMARKET_GAP_PCT / 2
+        or any(abs(index_futures.get(s, {}).get("change_pct", 0)) >= 0.75
+               for s in ("ES=F", "NQ=F"))
+    )
+
+    if material or force:
+        message = "\n".join(lines)
+    else:
+        # Still one line on a quiet morning rather than silence — a job that
+        # only speaks up on bad days is a job you cannot tell has died.
+        message = (f"🌅 Premarket {now_et.strftime('%b %d')} — quiet. "
+                   f"Portfolio {impact_pct:+.2f}% ({'+' if impact >= 0 else '-'}"
+                   f"${abs(impact):,.0f}) vs last close, no gap over "
+                   f"{_PREMARKET_GAP_PCT:g}%, no earnings within "
+                   f"{_PREMARKET_EARNINGS_DAYS} day(s).")
+
+    # Dedup the scheduled run only, and only once the send actually landed —
+    # a cron retry must not post the brief twice, but a failed post must stay
+    # retryable. A manual trigger is someone asking for it again on purpose.
+    key = _alert_key("PORTFOLIO", "premarket")
+    if not force and key in _sent_alerts:
+        print("[Premarket] already sent today — skipping")
+        return "Premarket brief already sent today."
+
+    if send_alert(message) and not force:
+        _sent_alerts.add(key)
+        _save_sent_alerts(_sent_alerts)
+
+    print(f"[Premarket] {len(movers)} mover(s), {len(due)} earnings, "
+          f"{len(missing)} unpriced at {now_vn.strftime('%H:%M GMT+7')}")
+    return message
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -461,6 +619,19 @@ def watchlist():
 @login_required
 def daily_digest():
     msg = run_daily_digest()
+    return jsonify({"message": msg})
+
+
+@app.route("/premarket-now", methods=["POST"])
+@login_required
+def premarket_now():
+    """Run the pre-open scan on demand.
+
+    force=True: this is someone asking for the brief, so it bypasses both the
+    once-a-day dedup and the "nothing printed today" skip — clicking the button
+    on a Sunday should show what the scan sees, not stay silent.
+    """
+    msg = run_premarket_scan(force=True)
     return jsonify({"message": msg})
 
 
@@ -765,10 +936,22 @@ def _journal_write(fn, payload):
 
 # ---------------------------------------------------------------------------
 # Vercel Cron routes — GET requests fired by Vercel's scheduler (UTC times)
-#   /cron/daily-digest   → "0 11 * * 1-5"   = 6 PM VN Mon–Fri
-#   /cron/close-summary  → "5 20 * * 1-5"   = 3:05 AM VN Tue–Sat
-#   /cron/check-warnings → called hourly by GitHub Actions (Mon–Fri 13–21 UTC)
-#   /cron/watchlist-scan → "55 10 * * 1-5"  = 5:55 PM VN Mon–Fri
+# Exactly one path is on Vercel's schedule. That allowance is the scarce
+# resource, so the pre-open work shares the single slot:
+#
+#   /cron/pre-open       → "30 12 * * 1-5"  = 8:30 ET in DST, 7:30 ET in winter
+#                          runs run_premarket_scan() + auto_scan_watchlist()
+#
+# The rest keep their routes but no slot, and are called by hand or by CI:
+#
+#   /cron/check-warnings → hourly from GitHub Actions (Mon–Fri 13–21 UTC)
+#   /cron/premarket      → the premarket leg on its own
+#   /cron/watchlist-scan → the watchlist leg on its own
+#   /cron/daily-digest   → the digest, on demand; no longer runs after the close
+#
+# The schedule is UTC-fixed, so it drifts an hour against ET across US daylight
+# saving. Both ends of that drift sit inside the 4:00–9:30 ET pre-open window,
+# which is the only thing the scan needs.
 # ---------------------------------------------------------------------------
 
 _CRON_SECRET = os.environ.get("CRON_SECRET", "")
@@ -817,13 +1000,6 @@ def cron_daily_digest():
     msg = run_daily_digest()
     return jsonify({"ok": True, "message": msg})
 
-@app.route("/cron/close-summary")
-def cron_close_summary():
-    err = _verify_cron() or _bind_owner()
-    if err: return err
-    msg = run_daily_digest()
-    return jsonify({"ok": True, "message": msg})
-
 @app.route("/cron/check-warnings")
 def cron_check_warnings():
     err = _verify_cron() or _bind_owner()
@@ -837,6 +1013,44 @@ def cron_watchlist_scan():
     if err: return err
     auto_scan_watchlist()
     return jsonify({"ok": True})
+
+@app.route("/cron/premarket")
+def cron_premarket():
+    err = _verify_cron() or _bind_owner()
+    if err: return err
+    msg = run_premarket_scan()
+    return jsonify({"ok": True, "message": msg})
+
+@app.route("/cron/pre-open")
+def cron_pre_open():
+    """Both pre-open briefings in one invocation — the scheduled entry point.
+
+    The cron *allowance* is the constraint here, not the work. The premarket
+    scan and the watchlist scan held two separate slots while firing 95 minutes
+    apart at the same point in the session, so running them back to back costs
+    one slot and reads as one briefing instead of two.
+
+    The two legs are independent on purpose: losing the watchlist scan is not a
+    reason to lose the gap alert, so a failure in either still lets the other
+    send. `/cron/premarket` and `/cron/watchlist-scan` stay callable on their
+    own for manual runs and backfills.
+    """
+    err = _verify_cron() or _bind_owner()
+    if err: return err
+
+    out = {}
+    try:
+        out["premarket"] = run_premarket_scan()
+    except Exception as e:
+        print(f"[Pre-open] premarket scan failed: {e}")
+        out["premarket"] = f"failed: {e}"
+    try:
+        auto_scan_watchlist()
+        out["watchlist"] = "sent"
+    except Exception as e:
+        print(f"[Pre-open] watchlist scan failed: {e}")
+        out["watchlist"] = f"failed: {e}"
+    return jsonify({"ok": True, **out})
 
 
 @app.route("/admin/bootstrap", methods=["POST"])

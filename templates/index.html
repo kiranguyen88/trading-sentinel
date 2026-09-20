@@ -449,10 +449,10 @@
       header h1 { font-size: .9rem; }
       header h1 span { display: none; }
       #market-time { font-size: .7rem; order: 3; width: 100%; }
-      #digest-btn, #check-btn, #suggest-btn, #journal-btn {
+      #digest-btn, #check-btn, #premarket-btn, #suggest-btn, #journal-btn {
         font-size: .72rem; padding: 5px 8px; margin-left: 0;
       }
-      #digest-btn span, #check-btn span, #suggest-btn span { display: none; }
+      #digest-btn span, #check-btn span, #premarket-btn span, #suggest-btn span { display: none; }
       /* The account chip now lives in the Account tab at the bottom — keeping it
          here too would just cost a header row to say the same thing twice. */
       .user-chip { display: none; }
@@ -568,6 +568,7 @@
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
+    <button id="premarket-btn" onclick="triggerPremarket()" style="background:rgba(96,165,250,.12);color:#93c5fd;border:1px solid rgba(96,165,250,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🌅 Premarket</button>
     <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
     <!-- Desktop entry point. The mobile Actions sheet is unreachable above 768px,
          so the journal needs its own button up here. -->
@@ -1207,6 +1208,22 @@ Quick starts:
     }
     btn.disabled = false;
     btn.textContent = '⚡ Check Warnings Now';
+  }
+
+  async function triggerPremarket() {
+    const btn = document.getElementById('premarket-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Scanning...';
+    try {
+      const res = await fetch('/premarket-now', { method: 'POST' });
+      const data = await res.json();
+      appendMessage('assistant', '🌅 Premarket scan complete — sent to Discord.\n\n' + data.message);
+      scrollToBottom();
+    } catch(e) {
+      appendMessage('assistant', '⚠️ Premarket scan failed.');
+    }
+    btn.disabled = false;
+    btn.textContent = '🌅 Premarket';
   }
 
   async function triggerDailyDigest() {

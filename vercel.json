@@ -6,8 +6,6 @@
     { "src": "/(.*)", "dest": "app.py" }
   ],
   "crons": [
-    { "path": "/cron/daily-digest",   "schedule": "0 11 * * 1-5"  },
-    { "path": "/cron/close-summary",  "schedule": "5 20 * * 1-5"  },
-    { "path": "/cron/watchlist-scan", "schedule": "55 10 * * 1-5" }
+    { "path": "/cron/pre-open", "schedule": "30 12 * * 1-5" }
   ]
 }

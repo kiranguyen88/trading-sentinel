@@ -16,7 +16,7 @@ pip install -r requirements.txt
 # Create an account (needed once — sign-up is closed by default)
 python create_user.py you@example.com your-password --owner
 
-# Deploy — Railway auto-deploys on every push to main
+# Deploy — Vercel auto-deploys on every push to main
 git push origin main
 ```
 
@@ -32,7 +32,7 @@ This is a single-process Python Flask server with a pure-JS single-page frontend
 
 | File | Role |
 |---|---|
-| `app.py` | Flask routes, SSE price stream, APScheduler jobs, TTL cache |
+| `app.py` | Flask routes, SSE price stream, cron job bodies, TTL cache |
 | `auth.py` | Accounts (hash/verify, `login_required`, `change_password`), chat logging, owner bootstrap |
 | `create_user.py` | One-off CLI to create an account (the first one has to come from somewhere) |
 | `check_supabase.py` | Diagnostic: is the service key valid and do the tables exist? |
@@ -149,9 +149,12 @@ Invariants worth keeping:
   themselves stay visible in the journal.
 - Fees are capitalised on entry and deducted on exit, so realized P&L is net; `totals`
   also carries `realized_pnl_gross` and `fees_total`.
-- **Never call journal code from an APScheduler job.** The `ContextVar` is unset on
-  background threads, so it would silently read and write the local dev `journal.json`.
-  `_require_user()` raises instead.
+- **Never call journal code from a background thread.** The `ContextVar` is unset
+  off the request thread, so it would silently read and write the local dev
+  `journal.json`. `_require_user()` raises instead. The `/cron/*` jobs are safe
+  because they run on a real request and call `_bind_owner()` first — but a
+  thread they spawn is not, and neither is a `/chat` generator, which is why
+  that one re-binds the user itself.
 
 Routes: `GET /journal/summary`, `POST /journal/trade`, `POST /journal/adjust`,
 `POST /journal/backfill`, `POST /journal/resync`, `DELETE /journal/delete/<id>`. The
@@ -172,16 +175,80 @@ All indicators are computed in `get_stock_data()` (`trading_bot.py`):
 
 `get_portfolio_snapshot()` fetches all holdings in parallel using `ThreadPoolExecutor`. `get_watchlist_snapshot()` does the same for watchlist tickers.
 
-### Scheduled jobs (APScheduler, Asia/Ho_Chi_Minh timezone)
+### Scheduled jobs
 
-| Schedule | Job |
-|---|---|
-| 6:00 PM VN Mon–Fri | `run_daily_digest()` → Discord |
-| 3:05 AM VN Tue–Sat | `run_daily_digest()` → Discord (≈ after US close) |
-| Every 1 hour | `check_warnings()` — self-gates on ET market hours 9:30–16:00 |
-| 5:55 PM VN Mon–Fri | `auto_scan_watchlist()` → Discord |
+Nothing schedules itself in-process — there is no APScheduler and no background
+thread. Every job is an HTTP `GET /cron/*` fired from outside, which is why they
+all start with `_verify_cron() or _bind_owner()`: the request arrives with no
+session, so the owner has to be bound onto the `ContextVar` by hand.
+
+Schedules are **UTC** (`vercel.json`), so they drift an hour against ET across
+US daylight saving. VN does not observe DST, so the VN-anchored jobs are stable.
+
+**Vercel gets exactly one cron slot, by choice.** Four jobs used to hold four,
+and three of those fired inside the same 95-minute pre-open window —
+`auto_scan_watchlist()` at 6:55 ET, `run_daily_digest()` at 7:00 ET and
+`run_premarket_scan()` at 8:30 ET, all briefing on the same portfolio. The scan
+and the watchlist now share one slot behind `/cron/pre-open`, and the post-close
+digest is no longer scheduled at all. Adding a job means folding it into that
+slot, not claiming a second.
+
+| Cron (UTC) | Fired by | Job |
+|---|---|---|
+| `30 12 * * 1-5` | Vercel | `/cron/pre-open` — `run_premarket_scan()` **+** `auto_scan_watchlist()`, 8:30 ET in DST / 7:30 ET in winter |
+| `0 13-21 * * 1-5` | GitHub Actions (`.github/workflows/hourly-warnings.yml`) | `check_warnings()` — self-gates on ET market hours 9:30–16:00 |
+
+The two legs of `/cron/pre-open` are independently wrapped: losing the watchlist
+scan is not a reason to lose the gap alert, so either can fail and the other
+still sends.
+
+`/cron/premarket`, `/cron/watchlist-scan` and `/cron/daily-digest` still exist
+and still work — they just have no slot, and are how you run one leg on its own.
+`/cron/close-summary` is gone; its body was a duplicate of `/cron/daily-digest`,
+so the digest is still reachable there and from the UI button, just not on a
+schedule.
 
 Alert deduplication: `_sent_alerts` set uses `{date}:{user_id}:{ticker}:{alert_type}` keys; one alert per user per ticker per type per calendar day. `/check-now` clears only the calling user's keys before running.
+
+The set is persisted to `/tmp`, which on Vercel lives on one warm instance —
+a cold start loses it. Dedup is therefore best-effort suppression of repeats,
+never a correctness guarantee, and nothing may depend on it having fired.
+
+### Pre-open scan
+
+`run_premarket_scan()` in `app.py` answers one question before the bell: what is
+the portfolio walking into today. It sends **one** message for the whole
+portfolio — gaps, earnings and headlines in one ordered list — because eight
+separate pings at 8am answer that question worse than one list does.
+
+The gap maths is the part that is easy to get wrong. `get_premarket_snapshot()`
+takes the reference close from **daily** bars dated strictly *before* today and
+the pre-open price from **today's 1-minute extended-hours** bars. Reading the
+reference from a daily bar dated today instead would compare this morning
+against itself — during premarket that row is a partial bar that already
+contains the gap. `get_index_futures()` guards the same way: with no daily bar
+dated today it returns `{}` rather than a number that describes yesterday while
+reading as this morning.
+
+A ticker with no bar dated today is reported as unpriced, never as flat. That is
+what makes the job safe on market holidays — the scheduled path sees no prints
+at all and stays silent instead of briefing you on stale prices.
+
+Headlines are relevance-filtered (`_is_about()`), not just recency-filtered.
+Yahoo's per-ticker feed pads itself with generic market commentary, and printed
+under a gap that padding reads as the *explanation* for the gap. A headline
+naming neither the symbol nor the company is dropped; a gap with no headline
+under it is itself the signal.
+
+Quiet mornings still send one line rather than nothing — a job that only speaks
+up on bad days is a job you cannot tell has died. Thresholds are
+`PREMARKET_GAP_PCT` (default 2) and `PREMARKET_EARNINGS_DAYS` (default 2).
+
+Dedup is `{date}:{user_id}:PORTFOLIO:premarket`, and it is recorded **only after
+Discord accepts the post**, so a cron retry cannot double-post but a failed post
+stays retryable. `/premarket-now` passes `force=True`, which bypasses both the
+dedup and the holiday skip — someone clicking the button wants to see what the
+scan sees.
 
 ### Frontend JS architecture (`templates/index.html`)
 
@@ -226,6 +293,8 @@ The `/chat` route logs both turns to `chat_messages` by parsing the SSE frames i
 | `CRON_SECRET` | Guards `/cron/*` and `/admin/bootstrap` |
 | `GEMINI_API_KEY` | Google AI Studio key for Gemini 2.5 Flash |
 | `DISCORD_WEBHOOK_URL` | Webhook that every alert and digest is posted to |
+| `PREMARKET_GAP_PCT` | Overnight move that counts as a mover, default `2` |
+| `PREMARKET_EARNINGS_DAYS` | Flag earnings this many days out, default `2` |
 | `PORTFOLIO_JSON` | Legacy single-tenant fallback; only read when there is no user |
-| `DATA_DIR` | Optional path for persistent volume (Railway) |
+| `DATA_DIR` | Optional path for a persistent volume. Unset on Vercel — there is no persistent disk, so the local-file fallbacks are offline-dev only |
 | `PORT` | Flask port, default `5000` |

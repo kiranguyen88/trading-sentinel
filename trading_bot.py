@@ -1,13 +1,18 @@
 import os
 import json
 import math
+import re
 import secrets
 import time
 from contextvars import ContextVar
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
+from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 _GMT7 = timezone(timedelta(hours=7))
+_ET   = ZoneInfo("America/New_York")
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import pandas as pd
 import yfinance as yf
 import requests
 from requests.adapters import HTTPAdapter
@@ -422,6 +427,244 @@ def get_watchlist_snapshot() -> list:
         if results[i] is None:
             results[i] = {"error": "Data unavailable", "ticker": _wl_ticker(item)}
     return results
+
+
+# ---------------------------------------------------------------------------
+# Pre-open data — gaps, earnings dates, index futures
+# ---------------------------------------------------------------------------
+
+def _close_frame(raw, tickers: list):
+    """Pull the Close columns out of a yf.download frame.
+
+    yfinance returns three different shapes depending on ticker count and
+    grouping — field-major MultiIndex, ticker-major MultiIndex, or a plain
+    Series for one ticker. All three collapse to a ticker-keyed DataFrame here.
+    """
+    closes = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=1)
+    if isinstance(closes, pd.Series):
+        closes = closes.to_frame(tickers[0])
+    return closes
+
+
+def get_premarket_snapshot(tickers: list) -> dict:
+    """Pre-open quote per ticker: today's last extended-hours print measured
+    against the previous *regular* session close.
+
+    The two halves deliberately come from different feeds. The reference close
+    is read from daily bars dated strictly before today, and the pre-open price
+    from today's 1-minute extended-hours bars. Taking the reference from a daily
+    bar dated today instead would compare this morning against itself — during
+    premarket that row is a partial bar that already contains the gap.
+
+    A ticker with no bar dated today gets ``pre_price: None`` rather than
+    yesterday's number dressed up as this morning's. Market holidays, weekends
+    and names that simply do not trade pre-open all land there.
+
+    Run after 9:30 ET this still works — ``gap_pct`` is then the move since the
+    last close, which is what the caller wants from a manual trigger anyway.
+    """
+    tickers = sorted({t for t in tickers if t})
+    if not tickers:
+        return {}
+    joined = " ".join(tickers)
+
+    try:
+        daily  = yf.download(joined, period="7d", interval="1d", prepost=False,
+                             progress=False, auto_adjust=False, threads=True,
+                             session=_yf_session)
+        dclose = _close_frame(daily, tickers)
+    except Exception as e:
+        print(f"[Premarket] daily bars failed: {e}")
+        return {}
+
+    try:
+        intra  = yf.download(joined, period="2d", interval="1m", prepost=True,
+                             progress=False, auto_adjust=False, threads=True,
+                             session=_yf_session)
+        iclose = _close_frame(intra, tickers)
+    except Exception as e:
+        # No pre-open prints is a degraded scan, not a failed one — the earnings
+        # and news legs still have something to say.
+        print(f"[Premarket] 1m extended-hours bars failed: {e}")
+        iclose = None
+
+    today = datetime.now(_ET).date()
+    out   = {}
+
+    for t in tickers:
+        prev_close = None
+        try:
+            if t in dclose.columns:
+                ser   = dclose[t].dropna()
+                prior = ser[[ts.date() < today for ts in ser.index]]
+                if not prior.empty:
+                    prev_close = float(prior.iloc[-1])
+        except Exception as e:
+            print(f"[Premarket] {t} prev close: {e}")
+
+        pre_price, as_of = None, None
+        try:
+            if iclose is not None and t in iclose.columns:
+                ser = iclose[t].dropna()
+                if not ser.empty:
+                    idx  = ser.index.tz_convert(_ET) if ser.index.tz is not None else ser.index
+                    mask = [ts.date() == today for ts in idx]
+                    if any(mask):
+                        pre_price = float(ser[mask].iloc[-1])
+                        as_of     = idx[mask][-1].strftime("%H:%M ET")
+        except Exception as e:
+            print(f"[Premarket] {t} pre-open print: {e}")
+
+        gap = None
+        if prev_close and pre_price:
+            gap = round((pre_price - prev_close) / prev_close * 100, 2)
+
+        out[t] = {"prev_close": prev_close, "pre_price": pre_price,
+                  "gap_pct": gap, "as_of": as_of}
+    return out
+
+
+def get_index_futures() -> dict:
+    """Overnight index futures and VIX — or {} when the numbers would be stale.
+
+    Both legs come from daily bars: the partial row dated today is the live
+    overnight price and the row before it is the prior settle. With no row for
+    today the market is shut, and the pair would describe *yesterday* while
+    reading as this morning — so nothing comes back rather than a wrong number.
+    """
+    labels = {"ES=F": "S&P fut", "NQ=F": "Nasdaq fut", "^VIX": "VIX"}
+    syms   = list(labels)
+    try:
+        raw    = yf.download(" ".join(syms), period="7d", interval="1d", prepost=False,
+                             progress=False, auto_adjust=False, threads=True,
+                             session=_yf_session)
+        closes = _close_frame(raw, syms)
+    except Exception as e:
+        print(f"[Premarket] futures failed: {e}")
+        return {}
+
+    today = datetime.now(_ET).date()
+    out   = {}
+    for sym in syms:
+        try:
+            if sym not in closes.columns:
+                continue
+            ser = closes[sym].dropna()
+            if len(ser) < 2 or ser.index[-1].date() != today:
+                continue
+            last, prev = float(ser.iloc[-1]), float(ser.iloc[-2])
+            if not prev:
+                continue
+            out[sym] = {"label": labels[sym], "price": round(last, 2),
+                        "change_pct": round((last - prev) / prev * 100, 2)}
+        except Exception as e:
+            print(f"[Premarket] futures {sym}: {e}")
+    return out
+
+
+def get_earnings_dates(tickers: list) -> dict:
+    """Next scheduled earnings date per ticker, fetched in parallel.
+
+    Anything Yahoo will not answer for maps to None. Yahoo drops the calendar
+    for plenty of names, and a missing earnings date is not worth failing the
+    whole pre-open scan over.
+    """
+    def fetch(ticker):
+        try:
+            cal   = yf.Ticker(ticker, session=_yf_session).calendar or {}
+            dates = cal.get("Earnings Date") or []
+            if not isinstance(dates, (list, tuple)):
+                dates = [dates]
+            # Yahoo returns a date here, but has returned datetimes in the past
+            # and callers subtract these from a date — which raises on a mix.
+            dates = [d.date() if isinstance(d, datetime) else d for d in dates if d]
+            dates = [d for d in dates if isinstance(d, date)]
+            return min(dates) if dates else None
+        except Exception:
+            return None
+
+    if not tickers:
+        return {}
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        return dict(zip(tickers, ex.map(fetch, tickers)))
+
+
+# Company names change about as often as tickers do, so one lookup per process
+# is plenty — and .info is the slowest call in this file.
+_name_cache: dict = {}
+
+_CORP_SUFFIX = re.compile(
+    r"\b(inc|incorporated|corp|corporation|co|company|plc|ltd|limited|holdings?|"
+    r"group|technologies|the)\b\.?", re.I)
+
+
+def _company_terms(ticker: str) -> set:
+    """Lowercase names a headline about `ticker` is likely to use.
+
+    Best-effort: Yahoo rate-limits .info fairly readily, and an empty set just
+    falls back to matching the symbol itself.
+    """
+    if ticker in _name_cache:
+        return _name_cache[ticker]
+    terms = set()
+    try:
+        info = yf.Ticker(ticker, session=_yf_session).info or {}
+        for field in ("displayName", "shortName", "longName"):
+            name = (info.get(field) or "").strip()
+            if not name:
+                continue
+            name = _CORP_SUFFIX.sub(" ", name)
+            name = re.sub(r"[^\w\s&.-]", " ", name).strip(" .-")
+            name = re.sub(r"\s+", " ", name)
+            if len(name) >= 3:
+                terms.add(name.lower())
+    except Exception:
+        pass
+    _name_cache[ticker] = terms
+    return terms
+
+
+def _is_about(title: str, ticker: str, terms: set) -> bool:
+    """Is this headline actually about the ticker?
+
+    Yahoo's per-ticker feed pads itself out with generic market commentary.
+    Printed underneath a gap alert that padding reads as the *explanation* for
+    the gap, which is worse than showing no headline at all — so a headline
+    naming neither the symbol nor the company is dropped. The symbol match is
+    case-sensitive so "KO" catches Coca-Cola without catching "ok".
+    """
+    if re.search(rf"\b{re.escape(ticker)}\b", title):
+        return True
+    low = title.lower()
+    return any(term in low for term in terms)
+
+
+def get_fresh_news(ticker: str, within_hours: float = 16, limit: int = 2) -> list:
+    """Headlines about `ticker` published inside the last `within_hours`.
+
+    Undated items are dropped rather than kept: in a pre-open brief an undated
+    headline reads as breaking news when it may be weeks old.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+    terms  = _company_terms(ticker)
+    fresh  = []
+    for art in get_market_news(ticker, max_articles=10):
+        if "error" in art:
+            continue
+        try:
+            when = parsedate_to_datetime(art.get("published") or "")
+        except (TypeError, ValueError):
+            continue
+        if when is None:
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        title = (art.get("title") or "").strip()
+        if when >= cutoff and title and _is_about(title, ticker, terms):
+            fresh.append({"title": title, "published": when.isoformat()})
+            if len(fresh) >= limit:
+                break
+    return fresh
 
 
 def get_market_news(query: str, max_articles: int = 5) -> list:
