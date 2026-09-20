@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import secrets
 import time
 from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
@@ -784,6 +785,26 @@ def _journal_db_ok() -> str | None:
     return uid if (_SUPABASE_OK and uid) else None
 
 
+class JournalTruncated(RuntimeError):
+    """The ledger came back incomplete. Replaying a partial ledger would invent
+    history — missing buys look like overselling — so callers must refuse rather
+    than carry on with what arrived."""
+
+
+# PostgREST caps how many rows it will return. Ask for far more than any personal
+# trading history will reach, and treat hitting the cap as an error, not a page.
+_JOURNAL_LIMIT = 10000
+
+
+def _content_range_total(header: str | None) -> int | None:
+    """Pull the total out of PostgREST's `Content-Range: 0-24/137`. None if the
+    server didn't say."""
+    if not header or "/" not in header:
+        return None
+    total = header.rsplit("/", 1)[1].strip()
+    return int(total) if total.isdigit() else None
+
+
 def load_journal() -> list:
     uid = _journal_db_ok()
     if not uid:
@@ -791,11 +812,17 @@ def load_journal() -> list:
     r = requests.get(
         f"{_SUPABASE_URL}/rest/v1/journal_entries",
         params={"user_id": f"eq.{uid}", "select": "data",
-                "order": "created_at.desc"},
-        headers=_sb_headers(), timeout=15,
+                "order": "created_at.asc", "limit": _JOURNAL_LIMIT},
+        headers={**_sb_headers(), "prefer": "count=exact"}, timeout=15,
     )
     r.raise_for_status()
-    return [row["data"] for row in r.json()]
+    rows = r.json()
+    total = _content_range_total(r.headers.get("content-range"))
+    if total is not None and total > len(rows):
+        raise JournalTruncated(
+            f"journal has {total} entries but only {len(rows)} came back — "
+            "refusing to replay a partial ledger")
+    return [row["data"] for row in rows]
 
 
 def save_journal(entries: list):
@@ -807,9 +834,13 @@ def save_journal(entries: list):
 
 def add_journal_entry(entry: dict) -> dict:
     now = datetime.now(_GMT7)
-    entry["id"] = entry.get("id") or f"trade_{now.strftime('%Y%m%d%H%M%S%f')}"
+    # Timestamp first so ids stay lexicographically chronological; the random
+    # suffix keeps two accounts from colliding on the same microsecond, which
+    # would 409 — `id` is a global primary key and the insert has no on_conflict.
+    entry["id"] = (entry.get("id")
+                   or f"trade_{now.strftime('%Y%m%d%H%M%S%f')}_{secrets.token_hex(2)}")
     entry["date"] = entry.get("date") or now.strftime("%Y-%m-%d")
-    entry["created_at"] = now.isoformat()
+    entry["created_at"] = entry.get("created_at") or now.isoformat()
 
     uid = _journal_db_ok()
     if not uid:
