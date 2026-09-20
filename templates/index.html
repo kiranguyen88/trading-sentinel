@@ -878,6 +878,7 @@ Quick starts:
         _lastPortfolio = data;
         renderPortfolio(data);
         renderCharts(data);
+        paintLotMarket();   // the journal may have rendered before prices arrived
         if (res.headers.get('X-Stale')) _showStale('holdings');
       } else if (_lastPortfolio) {
         renderPortfolio(_lastPortfolio);
@@ -1593,14 +1594,34 @@ Quick starts:
 
     el.innerHTML = `<table class="jr-table">
       <thead><tr><th>Ticker</th><th class="num">Shares</th><th class="num">Cost</th>
-        <th>Opened</th><th></th></tr></thead>
+        <th>Opened</th><th class="num">Total cost</th><th class="num">Market</th></tr></thead>
       <tbody>${lots.map(l => `<tr>
         <td class="jr-tk">${_esc(l.ticker)}</td>
         <td class="num">${_fmt(l.shares, 2)}</td>
         <td class="num">$${_fmt(l.cost_per_share)}</td>
         <td style="color:var(--muted)">${_esc(l.date)}</td>
-        <td>${l.origin === 'open' ? '<span class="jr-pill">opening</span>' : ''}</td>
+        <td class="num">$${_fmt(l.remaining_cost)}</td>
+        <td class="num jr-mkt" data-tk="${_esc(l.ticker)}"
+            data-sh="${l.shares}" data-cost="${l.remaining_cost}">--</td>
       </tr>`).join('')}</tbody></table>${note}`;
+    paintLotMarket();
+  }
+
+  // Market value is not in the ledger — the ledger only knows cost. Prices come
+  // from the portfolio snapshot and are repainted on every SSE tick, so this is
+  // a separate pass rather than part of the row template.
+  function paintLotMarket() {
+    const px = {};
+    (_lastPortfolio || []).forEach(h => { if (h.current_price) px[h.ticker] = h.current_price; });
+    document.querySelectorAll('#jr-lots .jr-mkt').forEach(td => {
+      const p = px[td.dataset.tk];
+      if (!p) { td.className = 'num jr-mkt'; td.textContent = '--'; td.title = ''; return; }
+      const mv = p * parseFloat(td.dataset.sh);
+      const d  = mv - parseFloat(td.dataset.cost);
+      td.className = 'num jr-mkt ' + _cls(d);
+      td.textContent = `$${_fmt(mv)}`;
+      td.title = `${_signed(d)} vs cost`;
+    });
   }
 
   function renderByTicker(d) {
@@ -1892,6 +1913,7 @@ Quick starts:
     if (portfolioUpdated && _lastPortfolio) {
       renderCharts(_lastPortfolio);
       updateMobileSummary(_lastPortfolio);
+      paintLotMarket();
     }
   }
 
