@@ -318,6 +318,59 @@
     .save-status { font-size: 0.78rem; color: var(--green); margin-right: auto; align-self: center; }
     .save-status.err { color: var(--red); }
 
+    /* ── Trade journal modal ── */
+    /* Wider than .modal (520px): the history table needs the room. */
+    .modal-lg { width: 900px; max-height: 90vh; }
+    .jr-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .jr-tile { background: rgba(0,0,0,.30); border: 1px solid var(--border);
+               border-radius: 12px; padding: 10px 12px; }
+    .jr-tile .lbl { font-size: .66rem; color: var(--muted); }
+    .jr-tile .val { font-size: 1.15rem; font-weight: 700; margin-top: 2px; }
+    .jr-tile .sub { font-size: .64rem; color: var(--muted); }
+    .jr-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .jr-side { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .jr-side button { background: none; border: none; color: var(--muted);
+                      padding: 6px 15px; font-size: .8rem; font-weight: 700; cursor: pointer; }
+    .jr-side button.on.buy  { background: rgba(52,211,153,.16); color: var(--green); }
+    .jr-side button.on.sell { background: rgba(248,113,113,.16); color: var(--red); }
+    .jr-table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+    .jr-table th { font-size: .64rem; color: var(--muted); font-weight: 700; text-align: left;
+                   padding: 5px 6px; border-bottom: 1px solid var(--border);
+                   text-transform: uppercase; letter-spacing: .5px; }
+    .jr-table td { padding: 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
+    .jr-table .num { text-align: right; }
+    .jr-tk { color: var(--accent); font-weight: 700; }
+    .jr-openable { cursor: pointer; }
+    .jr-openable:hover { background: rgba(255,255,255,.04); }
+    .jr-legs td { font-size: .68rem; color: var(--muted); padding-left: 20px; }
+    .jr-pill { font-size: .6rem; padding: 1px 7px; border-radius: 999px;
+               border: 1px solid var(--border); color: var(--muted); }
+    .jr-note { margin-top: 10px; padding: 8px 10px; background: rgba(46,230,197,.06);
+               border: 1px solid rgba(46,230,197,.20); border-radius: 8px;
+               font-size: .68rem; color: var(--muted); }
+    .jr-warn { margin-bottom: 12px; padding: 8px 10px; background: rgba(251,191,36,.10);
+               border: 1px solid rgba(251,191,36,.28); border-radius: 8px;
+               font-size: .7rem; color: var(--yellow); }
+    .jr-del { background: none; border: none; color: var(--muted); cursor: pointer;
+              font-size: .85rem; padding: 2px 6px; border-radius: 4px; }
+    .jr-del:hover { background: rgba(248,113,113,.15); color: var(--red); }
+    .jr-empty { padding: 16px; color: var(--muted); font-size: .76rem; text-align: center; }
+    .jr-link { background: none; border: 1px solid var(--border); border-radius: 8px;
+               color: var(--muted); font-size: .7rem; padding: 4px 10px; cursor: pointer; }
+    .jr-link:hover { border-color: rgba(46,230,197,.45); color: var(--accent); }
+    /* Sell shortcut on a holding card */
+    .card-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .card-sell-btn { background: rgba(248,113,113,.12); color: var(--red);
+                     border: 1px solid rgba(248,113,113,.32); border-radius: 8px;
+                     padding: 2px 11px; font-size: .66rem; font-weight: 700; cursor: pointer; }
+    .card-sell-btn:hover { background: rgba(248,113,113,.22); }
+    @media (max-width: 768px) {
+      .jr-tiles { grid-template-columns: repeat(2, 1fr); }
+      .jr-form .watchlist-input, .jr-form input { flex: 1 1 88px; min-width: 0; }
+      /* The native date control needs its full width or it clips to "09/20/:" */
+      .jr-form input[type="date"] { flex: 0 0 auto; min-width: 150px; }
+    }
+
     /* Change-password modal */
     .pw-label {
       display: block; font-size: .68rem; font-weight: 700; color: var(--muted);
@@ -513,6 +566,9 @@
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
     <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
+    <!-- Desktop entry point. The mobile Actions sheet is unreachable above 768px,
+         so the journal needs its own button up here. -->
+    <button id="journal-btn" onclick="openJournalModal()" style="background:rgba(46,230,197,.12);color:var(--accent);border:1px solid rgba(46,230,197,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">📓 Journal</button>
     {% if user %}
     <div class="user-chip">
       <strong>{{ user.display_name or user.email }}</strong>
@@ -588,6 +644,56 @@
   </div>
 </div>
 
+<!-- Trade Journal Modal -->
+<div class="modal-overlay" id="journal-modal">
+  <div class="modal modal-lg">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="margin:0">📓 Trade Journal</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="jr-link" onclick="resyncHoldings()" title="Rebuild holdings from the ledger">↻ Resync holdings</button>
+        <button class="jr-link" onclick="closeJournalModal()">✕</button>
+      </div>
+    </div>
+
+    <div id="jr-banner"></div>
+
+    <div class="jr-tiles" id="jr-tiles"></div>
+
+    <div class="modal-section">
+      <h3>Log a trade</h3>
+      <div class="jr-form">
+        <span class="jr-side">
+          <button type="button" id="jr-buy"  class="on buy"  onclick="setTradeSide('buy')">Buy</button>
+          <button type="button" id="jr-sell" class="sell" onclick="setTradeSide('sell')">Sell</button>
+        </span>
+        <input id="jr-ticker" class="watchlist-input inp-ticker" style="width:84px;text-transform:uppercase" placeholder="AMD">
+        <input id="jr-shares" class="watchlist-input" style="width:76px" type="number" step="any" placeholder="Shares">
+        <input id="jr-price"  class="watchlist-input" style="width:96px" type="number" step="any" placeholder="Price">
+        <input id="jr-date"   class="watchlist-input" style="width:132px" type="date">
+        <input id="jr-fees"   class="watchlist-input" style="width:72px" type="number" step="any" placeholder="Fees">
+        <button class="btn-save" id="jr-submit" onclick="submitTrade()">Log trade</button>
+      </div>
+      <input id="jr-notes" class="watchlist-input" style="margin-top:8px" placeholder="Notes — why you took this trade (optional)">
+      <div class="save-status" id="jr-status" style="margin:8px 0 0"></div>
+    </div>
+
+    <div class="modal-section">
+      <h3>Open lots — FIFO queue</h3>
+      <div id="jr-lots"></div>
+    </div>
+
+    <div class="modal-section">
+      <h3>By ticker</h3>
+      <div id="jr-by-ticker"></div>
+    </div>
+
+    <div class="modal-section" style="margin-bottom:0">
+      <h3>History</h3>
+      <div id="jr-history"></div>
+    </div>
+  </div>
+</div>
+
 
 <div class="main">
 
@@ -614,8 +720,12 @@
         <span class="mob-sum-value" id="mob-day-pnl">—</span>
       </div>
       <div class="mob-sum-cell">
-        <span class="mob-sum-label">Total P&L</span>
+        <span class="mob-sum-label">Unreal.</span>
         <span class="mob-sum-value" id="mob-total-pnl">—</span>
+      </div>
+      <div class="mob-sum-cell" style="background:rgba(46,230,197,.06)">
+        <span class="mob-sum-label">Realized</span>
+        <span class="mob-sum-value" id="mob-realized">—</span>
       </div>
     </div>
 
@@ -698,6 +808,7 @@ Quick starts:
     <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#04211c;border:none;border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest</button>
     <button onclick="triggerCheckNow();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">⚡ Check Warnings Now</button>
     <button onclick="triggerSuggestWatchlist();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">🔍 Auto-Suggest Watchlist</button>
+    <button onclick="document.getElementById('tab-actions-sheet').style.display='none';openJournalModal()" style="background:rgba(46,230,197,.12);color:var(--accent);border:1px solid rgba(46,230,197,.32);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📓 Trade Journal</button>
     <button onclick="document.getElementById('tab-actions-sheet').style.display='none';openPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">🔑 Change Password</button>
     <a href="/logout" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer;text-align:center;text-decoration:none">Sign out</a>
     <button onclick="document.getElementById('tab-actions-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
@@ -820,6 +931,8 @@ Quick starts:
       const isProfitable = pnlPct >= 0;
       const cardClass   = isProfitable ? 'card-profit' : 'card-loss';
       const pnlSign     = pnlPct > 0 ? '+' : pnlPct < 0 ? '-' : '';
+      const lots        = _lotCounts[h.ticker] || 0;
+      const lotNote     = lots > 1 ? ` · ${lots} lots` : '';
 
       return `<div class="holding-card ${cardClass}" data-ticker="${h.ticker}" data-lot="${lot}" data-qty="${h.quantity || 0}" onclick="sendQuick('Analyze ${h.ticker} in detail')">
         <div class="card-row1">
@@ -827,10 +940,11 @@ Quick starts:
           <span class="card-price" data-field="price">$${h.current_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
         <div class="card-row2">
-          <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span class="card-avg">avg $${h.avg_buy_price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}${lotNote}</span>
           <span class="card-day ${dayClass}" data-field="day">${dayStr}</span>
         </div>
-        <div class="card-pnl-label">
+        <div class="card-actions">
+          <button class="card-sell-btn" onclick="sellFromCard(event, '${h.ticker}', ${h.quantity||0}, ${h.current_price||0})">Sell</button>
           <span class="${pnlClass}" data-field="pnl">${pnlSign}$${Math.abs(h.unrealized_pnl||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})} (${pnlSign}${Math.abs(pnlPct).toFixed(1)}%)</span>
         </div>
       </div>`;
@@ -1357,10 +1471,11 @@ Quick starts:
       const stop  = parseFloat(row.querySelector('.wl-stop').value)  || null;
       watchlist.push({ ticker, entry, stop, notes: "" });
     }
-    const payload = {
-      holdings: _portfolioData.holdings || [],
-      watchlist,
-    };
+    // Watchlist only. Echoing back _portfolioData.holdings would post a snapshot
+    // taken when this modal opened, silently reverting any trade or portfolio
+    // edit made since — /portfolio-update keeps the stored value for a key it
+    // isn't given.
+    const payload = { watchlist };
     const statusEl = document.getElementById('save-status-wl');
     statusEl.textContent = 'Saving...';
     statusEl.style.color = 'var(--muted)';
@@ -1385,12 +1500,326 @@ Quick starts:
     }
   }
 
+  // ── Trade journal ──
+  // The ledger is the source of truth for positions: logging a trade here is what
+  // moves a holding, so every mutation refreshes the portfolio as well.
+  let _tradeSide = 'buy';
+  let _lotCounts = {};
+
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function _signed(n, dec = 2) {
+    const v = Number(n) || 0;
+    return `${v > 0 ? '+' : v < 0 ? '-' : ''}$${_fmt(Math.abs(v), dec)}`;
+  }
+  function _cls(n) {
+    const v = Number(n) || 0;
+    return v > 0 ? 'up' : v < 0 ? 'down' : 'neutral';
+  }
+
+  function setTradeSide(side) {
+    _tradeSide = side;
+    document.getElementById('jr-buy').classList.toggle('on', side === 'buy');
+    document.getElementById('jr-sell').classList.toggle('on', side === 'sell');
+  }
+
+  function openJournalModal(prefill) {
+    const p = prefill || {};
+    document.getElementById('journal-modal').classList.add('open');
+    setTradeSide(p.side || 'buy');
+    document.getElementById('jr-ticker').value = p.ticker || '';
+    document.getElementById('jr-shares').value = p.shares != null ? p.shares : '';
+    document.getElementById('jr-price').value  = p.price  != null ? p.price  : '';
+    document.getElementById('jr-fees').value  = '';
+    document.getElementById('jr-notes').value = '';
+    document.getElementById('jr-date').value  = new Date().toISOString().slice(0, 10);
+    setJrStatus('', false);
+    loadJournal();
+  }
+
+  function closeJournalModal() {
+    document.getElementById('journal-modal').classList.remove('open');
+  }
+
+  function setJrStatus(text, isError) {
+    const el = document.getElementById('jr-status');
+    el.textContent = text;
+    el.classList.toggle('err', !!isError);
+  }
+
+  // Opens the journal with the sell form already filled in for this position.
+  // stopPropagation because the card itself opens a chat analysis on click.
+  function sellFromCard(ev, ticker, qty, price) {
+    ev.stopPropagation();
+    openJournalModal({ side: 'sell', ticker, shares: qty, price });
+  }
+
+  async function loadJournal() {
+    try {
+      const res  = await fetch('/journal/summary', {cache: 'no-store'});
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        document.getElementById('jr-banner').innerHTML =
+          `<div class="jr-warn">${_esc(data.error || 'Could not load the journal.')}</div>`;
+        return;
+      }
+      renderJournal(data);
+      applyRealized(data);
+    } catch (e) {
+      document.getElementById('jr-banner').innerHTML =
+        '<div class="jr-warn">Could not load the journal.</div>';
+    }
+  }
+
+  function renderJournal(d) {
+    const t = d.totals || {};
+    document.getElementById('jr-tiles').innerHTML = `
+      <div class="jr-tile"><div class="lbl">Realized P&L</div>
+        <div class="val ${_cls(t.realized_pnl)}">${_signed(t.realized_pnl)}</div>
+        <div class="sub">gross ${_signed(t.realized_pnl_gross)}</div></div>
+      <div class="jr-tile"><div class="lbl">Win rate</div>
+        <div class="val">${_fmt(t.win_rate || 0, 0)}%</div>
+        <div class="sub">${t.wins || 0}W · ${t.losses || 0}L</div></div>
+      <div class="jr-tile"><div class="lbl">Closed trades</div>
+        <div class="val">${t.trade_count || 0}</div>
+        <div class="sub">${t.profit_factor != null ? 'profit factor ' + _fmt(t.profit_factor) : '—'}</div></div>
+      <div class="jr-tile"><div class="lbl">Fees</div>
+        <div class="val">$${_fmt(t.fees_total || 0)}</div>
+        <div class="sub">open basis $${_fmt(t.open_cost_basis || 0, 0)}</div></div>`;
+
+    const banner = document.getElementById('jr-banner');
+    if (d.ledger_empty) {
+      banner.innerHTML = `<div class="jr-warn">
+        No trades recorded yet. Import your current positions as opening balances to
+        start tracking realized P&L — each lot takes its cost from that position's
+        average price and is dated today, so correct any you know to be wrong.
+        <button class="jr-link" style="margin-left:8px" onclick="runBackfill()">Import positions</button>
+      </div>`;
+    } else if ((d.warnings || []).length) {
+      banner.innerHTML = `<div class="jr-warn">${d.warnings.map(w => _esc(w.message)).join('<br>')}</div>`;
+    } else {
+      banner.innerHTML = '';
+    }
+
+    renderLots(d);
+    renderByTicker(d);
+    renderHistory(d);
+  }
+
+  function renderLots(d) {
+    const lots = d.open_lots || [];
+    const el = document.getElementById('jr-lots');
+    if (!lots.length) {
+      el.innerHTML = '<div class="jr-empty">No open positions.</div>';
+      return;
+    }
+    // Spell out the projection: the portfolio shows one card per ticker, so a
+    // ticker with several lots would otherwise look like it lost its detail.
+    const byTicker = {};
+    lots.forEach(l => {
+      const a = byTicker[l.ticker] || (byTicker[l.ticker] = {n: 0, sh: 0, cost: 0});
+      a.n += 1; a.sh += l.shares; a.cost += l.remaining_cost;
+    });
+    const multi = Object.keys(byTicker).filter(t => byTicker[t].n > 1);
+    const note = multi.length ? `<div class="jr-note">Your portfolio shows one card per ticker — ${
+      multi.map(t => `<span style="color:var(--accent)">${_esc(t)} ${_fmt(byTicker[t].sh, 0)}sh avg $${
+        _fmt(byTicker[t].cost / byTicker[t].sh)}</span>`).join(', ')
+      }, blended from the lots above.</div>` : '';
+
+    el.innerHTML = `<table class="jr-table">
+      <thead><tr><th>Ticker</th><th class="num">Shares</th><th class="num">Cost</th>
+        <th>Opened</th><th></th></tr></thead>
+      <tbody>${lots.map(l => `<tr>
+        <td class="jr-tk">${_esc(l.ticker)}</td>
+        <td class="num">${_fmt(l.shares, 2)}</td>
+        <td class="num">$${_fmt(l.cost_per_share)}</td>
+        <td style="color:var(--muted)">${_esc(l.date)}</td>
+        <td>${l.origin === 'open' ? '<span class="jr-pill">opening</span>' : ''}</td>
+      </tr>`).join('')}</tbody></table>${note}`;
+  }
+
+  function renderByTicker(d) {
+    const rows = d.per_ticker || [];
+    const el = document.getElementById('jr-by-ticker');
+    if (!rows.length) { el.innerHTML = '<div class="jr-empty">Nothing yet.</div>'; return; }
+    el.innerHTML = `<table class="jr-table">
+      <thead><tr><th>Ticker</th><th class="num">Realized</th><th class="num">W/L</th>
+        <th class="num">Open</th><th class="num">Avg cost</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td class="jr-tk">${_esc(r.ticker)}</td>
+        <td class="num ${r.trades ? _cls(r.realized_pnl) : 'neutral'}">${
+          r.trades ? _signed(r.realized_pnl) : '—'}</td>
+        <td class="num">${r.trades ? `${r.wins}/${r.losses}` : '—'}</td>
+        <td class="num">${r.open_shares ? _fmt(r.open_shares, 2) : '—'}</td>
+        <td class="num">${r.open_shares ? '$' + _fmt(r.avg_cost) : '—'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+
+  const SIDE_LABEL = {buy: 'Buy', sell: 'Sell', open: 'Opening', adjust: 'Adjust'};
+
+  function renderHistory(d) {
+    const entries = d.entries || [];
+    const el = document.getElementById('jr-history');
+    if (!entries.length) { el.innerHTML = '<div class="jr-empty">No entries yet.</div>'; return; }
+
+    const realized = {};
+    (d.realized_trades || []).forEach(r => { realized[r.sell_id] = r; });
+
+    const rows = entries.map(e => {
+      const r = realized[e.id];
+      const sideCls = e.side === 'buy' || e.side === 'open' ? 'up'
+                    : e.side === 'sell' ? 'down' : 'neutral';
+      const shares = e.side === 'adjust' && e.target_shares != null
+        ? `→ ${_fmt(e.target_shares, 2)}` : _fmt(e.shares, 2);
+      const legs = r && r.legs && r.legs.length ? `<tr class="jr-legs" id="legs-${_esc(e.id)}" style="display:none">
+          <td colspan="7">↳ matched ${r.legs.map(g =>
+            `${_fmt(g.shares, 2)} sh from the ${_esc(g.lot_date)} lot @ $${_fmt(g.cost_per_share)}`
+          ).join(' · ')}${r.fees ? ` · fees $${_fmt(r.fees)}` : ''}${
+            r.hold_days ? ` · held ${r.hold_days}d` : ''}</td></tr>` : '';
+      const openable = legs ? ` class="jr-openable" onclick="toggleLegs('${_esc(e.id)}')"` : '';
+      return `<tr${openable}>
+        <td style="color:var(--muted)">${_esc(e.date)}</td>
+        <td class="jr-tk">${_esc(e.ticker)}</td>
+        <td class="${sideCls}">${SIDE_LABEL[e.side] || _esc(e.side)}</td>
+        <td class="num">${shares}</td>
+        <td class="num">$${_fmt(e.price)}</td>
+        <td class="num ${r ? _cls(r.pnl) : 'neutral'}">${r ? _signed(r.pnl) : '—'}</td>
+        <td class="num"><button class="jr-del" title="Delete this entry"
+          onclick="event.stopPropagation();deleteEntry('${_esc(e.id)}')">🗑</button></td>
+      </tr>${legs}`;
+    }).join('');
+
+    const more = d.entry_count > entries.length
+      ? `<div class="jr-empty">Showing the most recent ${entries.length} of ${d.entry_count} entries.</div>` : '';
+
+    el.innerHTML = `<table class="jr-table">
+      <thead><tr><th>Date</th><th>Ticker</th><th>Side</th><th class="num">Shares</th>
+        <th class="num">Price</th><th class="num">Realized</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>${more}`;
+  }
+
+  function toggleLegs(id) {
+    const row = document.getElementById('legs-' + id);
+    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+  }
+
+  async function submitTrade() {
+    const btn = document.getElementById('jr-submit');
+    const payload = {
+      ticker: document.getElementById('jr-ticker').value.trim().toUpperCase(),
+      side:   _tradeSide,
+      shares: parseFloat(document.getElementById('jr-shares').value),
+      price:  parseFloat(document.getElementById('jr-price').value),
+      date:   document.getElementById('jr-date').value,
+      fees:   parseFloat(document.getElementById('jr-fees').value) || 0,
+      notes:  document.getElementById('jr-notes').value.trim(),
+    };
+    if (!payload.ticker)        return setJrStatus('Enter a ticker.', true);
+    if (!(payload.shares > 0))  return setJrStatus('Enter how many shares.', true);
+    if (!(payload.price  > 0))  return setJrStatus('Enter a price.', true);
+
+    btn.disabled = true;
+    setJrStatus('Saving...', false);
+    try {
+      const res  = await fetch('/journal/trade', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)});
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setJrStatus(data.error || 'Could not log the trade.', true);
+        return;
+      }
+      // A recorded trade whose holdings sync failed is still recorded — say so
+      // rather than implying it needs logging again.
+      const stalled = data.holdings_synced === false;
+      setJrStatus(stalled ? (data.warning || 'Recorded, but holdings did not sync.') : 'Logged.', stalled);
+      ['jr-shares', 'jr-price', 'jr-fees', 'jr-notes']
+        .forEach(id => document.getElementById(id).value = '');
+      await loadJournal();
+      loadPortfolio();
+    } catch (e) {
+      setJrStatus('Could not log the trade.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function deleteEntry(id) {
+    if (!confirm('Delete this entry? Your totals and open lots will be recalculated.')) return;
+    try {
+      const res  = await fetch('/journal/delete/' + encodeURIComponent(id), {method: 'DELETE'});
+      const data = await res.json();
+      if (!res.ok || !data.ok) { setJrStatus(data.error || 'Could not delete.', true); return; }
+      setJrStatus('Deleted.', false);
+      await loadJournal();
+      loadPortfolio();
+    } catch (e) { setJrStatus('Could not delete.', true); }
+  }
+
+  async function runBackfill() {
+    setJrStatus('Importing...', false);
+    try {
+      const res  = await fetch('/journal/backfill', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const data = await res.json();
+      if (!res.ok || !data.ok) { setJrStatus(data.error || 'Could not import.', true); return; }
+      setJrStatus(`Imported ${data.created} position${data.created === 1 ? '' : 's'}.`, false);
+      await loadJournal();
+      loadPortfolio();
+    } catch (e) { setJrStatus('Could not import.', true); }
+  }
+
+  async function resyncHoldings() {
+    setJrStatus('Resyncing...', false);
+    try {
+      const res  = await fetch('/journal/resync', {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || !data.ok) { setJrStatus(data.error || 'Could not resync.', true); return; }
+      setJrStatus(data.changed ? 'Holdings rebuilt from the ledger.' : 'Already up to date.', false);
+      await loadJournal();
+      loadPortfolio();
+    } catch (e) { setJrStatus('Could not resync.', true); }
+  }
+
+  // Mobile summary strip — realized P&L, fetched without opening the modal.
+  function applyRealized(d) {
+    // Holdings show one card per ticker, so remember how many FIFO lots sit
+    // behind each one — the card says "2 lots" rather than losing the detail.
+    _lotCounts = {};
+    (d.open_lots || []).forEach(l => { _lotCounts[l.ticker] = (_lotCounts[l.ticker] || 0) + 1; });
+
+    // The lot counts usually land after the first portfolio render, so repaint
+    // the cards once they're known — otherwise "2 lots" only appears on the next
+    // refresh.
+    if (_lastPortfolio) renderPortfolio(_lastPortfolio);
+
+    const el = document.getElementById('mob-realized');
+    if (!el) return;
+    if (d.ledger_empty) { el.textContent = '—'; el.className = 'mob-sum-value neutral'; return; }
+    const v = (d.totals || {}).realized_pnl;
+    el.textContent = _signed(v, 0);
+    el.className = 'mob-sum-value ' + _cls(v);
+  }
+
+  async function loadRealized() {
+    try {
+      const res  = await fetch('/journal/summary?limit=0', {cache: 'no-store'});
+      const data = await res.json();
+      if (res.ok && data.ok) applyRealized(data);
+    } catch (_) { /* the strip just keeps its placeholder */ }
+  }
+
   // Close modals on overlay click
   document.getElementById('portfolio-modal').addEventListener('click', function(e) {
     if (e.target === this) closePortfolioModal();
   });
   document.getElementById('watchlist-modal').addEventListener('click', function(e) {
     if (e.target === this) closeWatchlistModal();
+  });
+  document.getElementById('journal-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeJournalModal();
   });
 
   // ── Live price updates via SSE ──
@@ -1529,6 +1958,7 @@ Quick starts:
   // Init
   loadPortfolio();
   loadWatchlist();
+  loadRealized();                                    // realized P&L + lot counts
   fetchPrices();                                     // immediate first fetch
   setInterval(fetchPrices,         30000);           // price poll: 30 s
   setInterval(() => { loadWatchlist(); },  60000);   // watchlist: 60 s poll

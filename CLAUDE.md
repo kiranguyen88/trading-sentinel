@@ -37,6 +37,7 @@ This is a single-process Python Flask server with a pure-JS single-page frontend
 | `create_user.py` | One-off CLI to create an account (the first one has to come from somewhere) |
 | `check_supabase.py` | Diagnostic: is the service key valid and do the tables exist? |
 | `trading_bot.py` | Market data (yfinance), technical indicators, Gemini AI chat, Discord alerts, portfolio/journal persistence |
+| `journal.py` | Trade ledger — FIFO replay, realized P&L, and the holdings projection |
 | `screener.py` | 400+ stock universe, batch technical scan, Gemini ranking of best setups |
 | `templates/index.html` | Entire frontend — CSS, HTML, vanilla JS (no build toolchain) |
 | `templates/login.html` | Login / register page |
@@ -105,6 +106,62 @@ With no user and no database (offline dev), it falls back to the old chain: loca
 
 **Anything cached per process must be keyed by user id** — `_cached_fetch`, `_fast_prices`
 and `_alert_key` all are. A missed key leaks one account's positions to another.
+
+### Trade journal — realized P&L
+
+`journal.py` turns `journal_entries` into a real ledger, and **the ledger is the only
+writer of `holdings`**. A logged buy opens a position, a sell closes shares FIFO and
+books realized P&L, and `user_state.holdings` is a *projection* of whatever lots remain.
+
+The top half of the file is pure — no project imports, plain dicts in, dataclasses out —
+so the FIFO maths can be exercised in a REPL without a database. Only the I/O tail below
+the marker touches Supabase.
+
+**Nothing derived is ever stored.** Realized P&L, open lots and totals are recomputed by
+replaying the whole ledger on each read, so deleting or back-dating an entry self-heals.
+That is also forced by the storage layer: `save_journal()` is a no-op on the DB path, so
+entries can only be added and deleted one row at a time — there is no bulk rewrite and
+therefore no edit-in-place.
+
+Invariants worth keeping:
+
+- **Sort in Python, never trust the DB order.** `load_journal()` orders by the *table*
+  `created_at`, which is not the trade date. `sort_key()` orders by
+  `(open-first, date, time, buys-before-sells, created_at, id)`. Opening balances rank
+  first rather than being given a fake old date, and buys precede sells on the same date
+  so logging a sell before remembering the buy isn't read as an oversell.
+- **`replay()` is total — it never raises.** A malformed or over-selling entry is clamped
+  and reported in `warnings`; one bad row must not make the journal unloadable. Callers
+  decide what to do: the add route rejects a *new* oversell with 400, the delete route
+  allows it (blocking would trap the user with an entry they can't remove).
+- **Never derive holdings from an empty or failed ledger.** `read_ledger()` raises rather
+  than returning a partial list, `load_journal()` refuses a truncated PostgREST response
+  (`JournalTruncated` — losing the oldest rows would drop the buys FIFO matches against),
+  and `sync_holdings()` refuses to write when the ledger is empty. Same reasoning as
+  `load_portfolio()`: unreachable ≠ empty.
+- **Ledger first, holdings second.** If `save_portfolio()` fails after the entry is
+  written, the route still returns 200 with `holdings_synced: false` — the trade is
+  durably recorded and claiming failure would make the user log it twice. `/journal/summary`
+  repairs the drift on the next load; `/journal/resync` does it on demand.
+- **Holdings are one row per ticker**, blended cost. A row per lot would make the lot
+  index unstable — selling out of lot 0 renumbers the rest, and both the `TICKER#i` price
+  cache key and the DOM's `data-lot` would then point at the wrong lot. The lots
+  themselves stay visible in the journal.
+- Fees are capitalised on entry and deducted on exit, so realized P&L is net; `totals`
+  also carries `realized_pnl_gross` and `fees_total`.
+- **Never call journal code from an APScheduler job.** The `ContextVar` is unset on
+  background threads, so it would silently read and write the local dev `journal.json`.
+  `_require_user()` raises instead.
+
+Routes: `GET /journal/summary`, `POST /journal/trade`, `POST /journal/adjust`,
+`POST /journal/backfill`, `POST /journal/resync`, `DELETE /journal/delete/<id>`. The
+route function for `GET /journal` is `journal_list` — naming it `journal` would rebind
+the imported module.
+
+Hand-edits in the Edit Portfolio modal still work: `/portfolio-update` reads a submitted
+holdings array as a *declared target per ticker* and records `adjust` entries, rather than
+inferring a diff. `saveWatchlist()` must therefore never echo holdings back — it posts
+`{watchlist}` only.
 
 ### Technical indicators
 

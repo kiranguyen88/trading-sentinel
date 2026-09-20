@@ -21,6 +21,7 @@ from trading_bot import (
     _yf_session,
 )
 import auth
+import journal
 from auth import login_required
 from screener import ai_suggest_watchlist
 import yfinance as _yf
@@ -87,6 +88,14 @@ _fast_prices: dict = {}
 
 def _last_prices(uid) -> list:
     return list(_fast_prices.get(uid, {}).values())
+
+def _evict_user_caches(uid):
+    """Drop this user's cached snapshots after their holdings change, so the edit
+    shows up on the next /portfolio and /watchlist fetch instead of waiting out
+    the 120s TTL. Every path that writes holdings has to call this."""
+    _cache.pop(f"portfolio:{uid}", None)
+    _cache.pop(f"watchlist:{uid}", None)
+    _fast_prices.pop(uid, None)
 
 def _fetch_live_prices() -> list:
     """Batch-fetch latest price + day-change for portfolio holdings AND watchlist."""
@@ -483,24 +492,91 @@ def portfolio_data():
     return resp
 
 
+def _num(value) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if out != out else out   # NaN
+
+
+def _apply_holdings_edit(entries, submitted, no_pnl: bool) -> list:
+    """Record a hand-edited holdings array as explicit ledger adjustments.
+
+    The submitted rows carry no lot identity, so this reads them as a *declared
+    target* per ticker rather than trying to infer which lot changed. That is
+    the same thing a "set position" action does, just reached from the familiar
+    modal — and it means the edit is written down instead of being silently
+    overwritten by the next trade the user logs.
+    """
+    current = {h["ticker"]: h for h in
+               journal.derive_holdings(journal.replay(entries).open_lots)}
+
+    target: dict = {}
+    for row in submitted or []:
+        ticker = str(row.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        price = _num(row.get("avg_buy_price"))
+        slot = target.setdefault(ticker, {"quantity": 0.0, "avg_buy_price": price})
+        # Duplicate rows for one ticker are summed — the portfolio renders one
+        # card per ticker now, but a hand-typed array may still repeat one.
+        slot["quantity"] += abs(_num(row.get("quantity")))
+        if price > 0:
+            slot["avg_buy_price"] = price
+
+    applied = []
+    for ticker in sorted(set(current) | set(target)):
+        want = target.get(ticker, {"quantity": 0.0, "avg_buy_price": 0.0})
+        have = current.get(ticker) or {"quantity": 0.0, "avg_buy_price": 0.0}
+        price = want["avg_buy_price"] or have["avg_buy_price"]
+        qty_changed = abs(want["quantity"] - have["quantity"]) > journal.EPS
+        basis_changed = price > 0 and abs(price - have["avg_buy_price"]) > 1e-4
+        if price <= 0 or not (qty_changed or basis_changed):
+            continue
+        result = journal.record_adjust({
+            "ticker": ticker,
+            "target_shares": want["quantity"],
+            "price": price,
+            # A basis-only edit is a correction by definition — it cannot be a
+            # sale, because no shares moved.
+            "no_pnl": no_pnl or not qty_changed,
+            "notes": "portfolio edit",
+        })
+        applied.append({"ticker": ticker, "target_shares": want["quantity"],
+                        "ok": bool(result.get("ok")), "error": result.get("error")})
+    return applied
+
+
 @app.route("/portfolio-update", methods=["POST"])
 @login_required
 def portfolio_update():
     data = request.json or {}
     uid = current_user_id()
+    submitted = data.get("holdings")
+    adjustments = []
+
+    if submitted is not None:
+        try:
+            entries = journal.read_ledger()
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"Journal unavailable: {e}"}), 503
+        if entries:
+            # Once a ledger exists it is the only writer of holdings, so the edit
+            # goes in as adjustments and the array itself is discarded.
+            adjustments = _apply_holdings_edit(entries, submitted, bool(data.get("no_pnl")))
+            submitted = None
+
     p = load_portfolio()
-    p["holdings"]  = data.get("holdings",  p.get("holdings", []))
+    if submitted is not None:
+        p["holdings"] = submitted
     p["watchlist"] = data.get("watchlist", p.get("watchlist", []))
     try:
         save_portfolio(p)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
-    # Drop this user's cached snapshots so the edit shows up on the next
-    # /portfolio and /watchlist fetch instead of waiting out the 120s TTL.
-    _cache.pop(f"portfolio:{uid}", None)
-    _cache.pop(f"watchlist:{uid}", None)
-    _fast_prices.pop(uid, None)
-    return jsonify({"ok": True})
+    _evict_user_caches(uid)
+    return jsonify({"ok": True, "adjustments": adjustments})
 
 
 @app.route("/chat", methods=["POST"])
@@ -578,24 +654,113 @@ def position_size():
     return jsonify(result)
 
 
+# The route function must not be called `journal` — that would rebind the
+# imported module and break every journal.* call below it.
 @app.route("/journal")
 @login_required
-def journal():
+def journal_list():
     return jsonify(load_journal())
 
+
+@app.route("/journal/summary")
+@login_required
+def journal_summary():
+    try:
+        entries, res = journal.current_state()
+    except Exception as e:
+        # Never fall back to an empty ledger: unreachable is not empty, and the
+        # page would then offer to "resync" a portfolio down to nothing.
+        return jsonify({"ok": False, "error": f"ledger unavailable: {e}"}), 503
+
+    try:
+        limit = max(0, min(1000, int(request.args.get("limit", 200))))
+    except (TypeError, ValueError):
+        limit = 200
+
+    payload = journal.summarize(res, entries, limit=limit)
+    payload["ok"] = True
+    payload["ledger_empty"] = not entries
+    # Self-heal: if a previous write recorded the entry but failed to save
+    # holdings, put them back now rather than making the user notice and ask.
+    try:
+        payload["holdings_repaired"] = journal.sync_holdings(entries, res)
+    except Exception:
+        payload["holdings_repaired"] = False
+    if payload["holdings_repaired"]:
+        _evict_user_caches(current_user_id())
+    return jsonify(payload)
+
+
+@app.route("/journal/trade", methods=["POST"])
+@login_required
+def journal_trade():
+    return _journal_write(journal.record_trade, request.json or {})
+
+
+# Kept at its old path, but routed through the validated path so it can no longer
+# inject an entry that replay would have to warn about.
 @app.route("/journal/add", methods=["POST"])
 @login_required
 def journal_add():
-    entry = request.json or {}
-    if not entry.get("ticker"):
-        return jsonify({"error": "ticker required"}), 400
-    return jsonify(add_journal_entry(entry))
+    return _journal_write(journal.record_trade, request.json or {})
+
+
+@app.route("/journal/adjust", methods=["POST"])
+@login_required
+def journal_adjust():
+    return _journal_write(journal.record_adjust, request.json or {})
+
+
+@app.route("/journal/backfill", methods=["POST"])
+@login_required
+def journal_backfill():
+    body = request.json or {}
+    try:
+        result = journal.backfill_from_holdings(force=bool(body.get("force")))
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"ledger unavailable: {e}"}), 503
+    if not result.get("ok"):
+        return jsonify(result), 409 if result.get("code") == "already_backfilled" else 400
+    _evict_user_caches(current_user_id())
+    return jsonify(result)
+
+
+@app.route("/journal/resync", methods=["POST"])
+@login_required
+def journal_resync():
+    try:
+        result = journal.resync()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"ledger unavailable: {e}"}), 503
+    _evict_user_caches(current_user_id())
+    return jsonify(result)
+
 
 @app.route("/journal/delete/<entry_id>", methods=["DELETE"])
 @login_required
 def journal_delete(entry_id):
-    ok = delete_journal_entry(entry_id)
-    return jsonify({"ok": ok})
+    try:
+        result = journal.remove_trade(entry_id)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"ledger unavailable: {e}"}), 503
+    if not result.get("ok"):
+        return jsonify(result), 404
+    _evict_user_caches(current_user_id())
+    return jsonify(result)
+
+
+def _journal_write(fn, payload):
+    """Shared tail for the routes that add an entry. A rejected entry is a 400; a
+    recorded entry whose holdings sync failed is still a 200, because the trade
+    itself is durably written and saying otherwise invites a duplicate."""
+    try:
+        result = fn(payload)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"ledger unavailable: {e}"}), 503
+    if not result.get("ok"):
+        return jsonify(result), 400
+    _evict_user_caches(current_user_id())
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
