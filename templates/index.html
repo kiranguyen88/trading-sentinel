@@ -449,10 +449,10 @@
       header h1 { font-size: .9rem; }
       header h1 span { display: none; }
       #market-time { font-size: .7rem; order: 3; width: 100%; }
-      #digest-btn, #check-btn, #suggest-btn, #journal-btn {
+      #digest-btn, #check-btn, #journal-btn {
         font-size: .72rem; padding: 5px 8px; margin-left: 0;
       }
-      #digest-btn span, #check-btn span, #suggest-btn span { display: none; }
+      #digest-btn span, #check-btn span { display: none; }
       /* The account chip now lives in the Account tab at the bottom — keeping it
          here too would just cost a header row to say the same thing twice. */
       .user-chip { display: none; }
@@ -568,7 +568,6 @@
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
     <button id="check-btn" onclick="triggerCheckNow()" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
-    <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
     <!-- Desktop entry point. The mobile Actions sheet is unreachable above 768px,
          so the journal needs its own button up here. -->
     <button id="journal-btn" onclick="openJournalModal()" style="background:rgba(46,230,197,.12);color:var(--accent);border:1px solid rgba(46,230,197,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">📓 Journal</button>
@@ -1152,45 +1151,6 @@ Quick starts:
   function scrollToBottom() {
     const msgs = document.getElementById('messages');
     msgs.scrollTop = msgs.scrollHeight;
-  }
-
-  async function triggerSuggestWatchlist() {
-    const btn = document.getElementById('suggest-btn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Scanning 400+ stocks...';
-
-    // Show scanning message in chat
-    const scanMsg = appendMessage('assistant', '🔍 Scanning 400+ US stocks across 20 sectors...\nChecking RSI, MACD, Bollinger Bands, volume, and news for each.\nThis takes about 60–90 seconds.');
-
-    try {
-      const res  = await fetch('/suggest-watchlist', { method: 'POST' });
-      const data = await res.json();
-      const suggestions = data.suggestions || [];
-      const note = data.market_note || '';
-
-      if (suggestions.length === 0) {
-        scanMsg.querySelector('.bubble').innerHTML = marked.parse('⚠️ No strong setups found right now. Try again later.');
-      } else {
-        let text = `🎯 **Auto-Suggested Watchlist Updated** (${suggestions.length} picks)\n\n`;
-        if (note) text += `📌 Market: ${note}\n\n`;
-        suggestions.forEach((s, i) => {
-          text += `${i+1}. **${s.ticker}** — ${s.sector}\n`;
-          text += `   ${s.summary}\n`;
-          text += `   Entry: ${s.entry_range} | Target: ${s.target} | Stop: ${s.stop_loss} | ${s.horizon} | Risk: ${s.risk}\n`;
-          text += `   📈 Tech: ${s.technical_reason}\n`;
-          text += `   📰 News: ${s.news_catalyst}\n\n`;
-        });
-        text += `💡 These are suggestions only — your watchlist is unchanged. Add tickers manually via the Edit button.`;
-        scanMsg.querySelector('.bubble').innerHTML = marked.parse(text);
-      }
-
-      scrollToBottom();
-    } catch(e) {
-      scanMsg.querySelector('.bubble').textContent = '⚠️ Screener failed. Please try again.';
-    }
-
-    btn.disabled = false;
-    btn.textContent = '🔍 Auto-Suggest Watchlist';
   }
 
   async function triggerCheckNow() {
