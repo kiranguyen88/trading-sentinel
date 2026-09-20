@@ -449,10 +449,13 @@
       header h1 { font-size: .9rem; }
       header h1 span { display: none; }
       #market-time { font-size: .7rem; order: 3; width: 100%; }
-      #digest-btn, #check-btn, #suggest-btn {
+      #digest-btn, #check-btn, #suggest-btn, #journal-btn {
         font-size: .72rem; padding: 5px 8px; margin-left: 0;
       }
       #digest-btn span, #check-btn span, #suggest-btn span { display: none; }
+      /* The account chip now lives in the Account tab at the bottom — keeping it
+         here too would just cost a header row to say the same thing twice. */
+      .user-chip { display: none; }
 
       /* Charts strip scrolls horizontally */
       .charts-panel { padding: 8px 10px; gap: 8px; }
@@ -796,22 +799,26 @@ Quick starts:
   <button class="nav-tab" id="nav-watchlist" onclick="switchTab('watchlist')">
     <span class="nav-icon">👁</span>Watchlist
   </button>
-  <button class="nav-tab" id="nav-actions" onclick="switchTab('actions')">
-    <span class="nav-icon">⚡</span>Actions
+  <button class="nav-tab" id="nav-account" onclick="switchTab('account')">
+    <span class="nav-icon">👤</span>Account
   </button>
 </nav>
 
-<!-- Mobile Actions Sheet -->
-<div id="tab-actions-sheet" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:flex-end" onclick="if(event.target===this)this.style.display='none'">
+<!-- Mobile Account Sheet -->
+<div id="tab-account-sheet" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:flex-end" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:var(--surface);border-radius:16px 16px 0 0;padding:20px;width:100%;display:flex;flex-direction:column;gap:10px">
-    <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Quick Actions</div>
-    <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#04211c;border:none;border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest</button>
-    <button onclick="triggerCheckNow();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">⚡ Check Warnings Now</button>
-    <button onclick="triggerSuggestWatchlist();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">🔍 Auto-Suggest Watchlist</button>
-    <button onclick="document.getElementById('tab-actions-sheet').style.display='none';openJournalModal()" style="background:rgba(46,230,197,.12);color:var(--accent);border:1px solid rgba(46,230,197,.32);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📓 Trade Journal</button>
-    <button onclick="document.getElementById('tab-actions-sheet').style.display='none';openPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">🔑 Change Password</button>
-    <a href="/logout" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer;text-align:center;text-decoration:none">Sign out</a>
-    <button onclick="document.getElementById('tab-actions-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
+    {% if user %}
+    <div style="display:flex;align-items:center;gap:12px;padding:4px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:4px">
+      <div style="width:42px;height:42px;border-radius:50%;background:rgba(46,230,197,.14);border:1px solid rgba(46,230,197,.3);display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;color:var(--accent)">{{ (user.display_name or user.email)[0]|upper }}</div>
+      <div style="min-width:0">
+        <div style="font-size:.95rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ user.display_name or user.email }}</div>
+        <div style="font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ user.email }}</div>
+      </div>
+    </div>
+    {% endif %}
+    <button onclick="document.getElementById('tab-account-sheet').style.display='none';openPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:12px;padding:11px;font-size:.85rem;color:var(--text);cursor:pointer;text-align:left">&#128273;&nbsp; Change password</button>
+    <a href="/logout" style="background:none;border:1px solid var(--border);border-radius:12px;padding:11px;font-size:.85rem;color:var(--red);cursor:pointer;text-align:left;text-decoration:none">&#8617;&nbsp; Sign out</a>
+    <button onclick="document.getElementById('tab-account-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
   </div>
 </div>
 
@@ -835,8 +842,8 @@ Quick starts:
 
   // ── Mobile tab switching ──
   function switchTab(tab) {
-    if (tab === 'actions') {
-      document.getElementById('tab-actions-sheet').style.display = 'flex';
+    if (tab === 'account') {
+      document.getElementById('tab-account-sheet').style.display = 'flex';
       return;
     }
     const sidebar   = document.getElementById('tab-portfolio');
