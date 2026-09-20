@@ -9,28 +9,47 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --border:   #30363d;
-      --accent:   #58a6ff;
-      --green:    #3fb950;
-      --red:      #f85149;
-      --yellow:   #d29922;
-      --text:     #c9d1d9;
-      --muted:    #8b949e;
-      --chat-bg:  #1c2128;
+      --bg:       #080b10;
+      --surface:  #0f161d;
+      --glass:    rgba(255,255,255,.035);
+      --border:   rgba(255,255,255,.08);
+      --accent:   #2ee6c5;
+      --accent-2: #5eead4;
+      --green:    #34d399;
+      --red:      #f87171;
+      --yellow:   #fbbf24;
+      --violet:   #8b7cf6;
+      --text:     #dbe4ee;
+      --muted:    #7d8b9c;
+      --chat-bg:  #0c131a;
+      --radius:   14px;
     }
 
     body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif;
-           height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+           height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+           position: relative; }
+
+    /* Soft teal light bleeding in from the corners, as in the reference design. */
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(760px 420px at 8% -5%,  rgba(46,230,197,.10), transparent 70%),
+        radial-gradient(680px 400px at 95% 105%, rgba(46,230,197,.07), transparent 70%);
+    }
+    header, .main, .bottom-nav { position: relative; z-index: 1; }
 
     /* ── Top bar ── */
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), var(--glass));
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
       flex-shrink: 0;
     }
-    header h1 { font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+    header h1 { font-size: 1.1rem; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;
+                background: linear-gradient(90deg, var(--accent), var(--accent-2));
+                -webkit-background-clip: text; background-clip: text; color: transparent; }
     header h1 img { height: 32px; width: 32px; object-fit: contain; }
     header h1 span { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 8px; }
     #market-time { font-size: 0.78rem; color: var(--muted); }
@@ -42,22 +61,42 @@
     #sse-dot.offline { background:var(--red); box-shadow:0 0 4px var(--red); }
 
     /* ── Price flash animation ── */
-    @keyframes price-flash-up   { 0%{background:#3fb95055} 100%{background:transparent} }
-    @keyframes price-flash-down { 0%{background:#f8514955} 100%{background:transparent} }
+    @keyframes price-flash-up   { 0%{background:rgba(52,211,153,.30)} 100%{background:transparent} }
+    @keyframes price-flash-down { 0%{background:rgba(248,113,113,.30)} 100%{background:transparent} }
     .flash-up   { animation: price-flash-up   0.6s ease-out; border-radius:3px; }
     .flash-down { animation: price-flash-down 0.6s ease-out; border-radius:3px; }
     #digest-btn {
-      background: var(--accent); color: #000; border: none; border-radius: 6px;
-      padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 600;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #04211c; border: none; border-radius: 9px;
+      padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 700;
+      box-shadow: 0 4px 14px rgba(46,230,197,.20);
     }
-    #digest-btn:hover { opacity: .85; }
+    #digest-btn:hover { filter: brightness(1.08); }
+
+    /* ── Account chip (header) ── */
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 6px 4px 10px; border-radius: 999px;
+      background: var(--glass); border: 1px solid var(--border);
+      font-size: .74rem; color: var(--muted);
+    }
+    .user-chip strong { color: var(--text); font-weight: 600; }
+    .user-chip a {
+      color: var(--muted); text-decoration: none; font-size: .72rem; font-weight: 600;
+      padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
+    }
+    .user-chip a:hover { color: var(--red); border-color: rgba(248,113,113,.4); }
 
     /* ── Main layout ── */
     .main { display: flex; flex: 1; overflow: hidden; flex-direction: row; }
 
     /* ── Portfolio sidebar ── */
+    /* Panels are layered over an opaque base, not left translucent: on mobile the
+       columns become absolutely-positioned tabs stacked on top of each other, and
+       a see-through panel shows the one behind it. */
     .sidebar {
-      width: 260px; flex-shrink: 0; background: var(--surface);
+      width: 260px; flex-shrink: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bg);
       border-right: 1px solid var(--border); display: flex; flex-direction: column;
       overflow: hidden; height: 100%;
     }
@@ -78,27 +117,29 @@
       letter-spacing: 1px; text-transform: uppercase; flex-shrink: 0;
     }
     .holding-card {
-      background: var(--bg);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-left: 3px solid var(--border);
-      border-radius: 8px;
+      border-left: 3px solid rgba(255,255,255,.12);
+      border-radius: var(--radius);
       padding: 9px 11px 8px;
-      margin-bottom: 6px;
+      margin-bottom: 7px;
       cursor: pointer;
-      transition: background .15s, transform .15s;
+      transition: background .15s, transform .15s, box-shadow .15s;
       position: relative;
+      box-shadow: 0 2px 10px rgba(0,0,0,.30);
     }
     .holding-card.card-profit {
       border-left-color: var(--green);
-      background: linear-gradient(to right, rgba(63,185,80,0.05) 0%, var(--bg) 55%);
+      background: linear-gradient(to right, rgba(52,211,153,0.08) 0%, var(--surface) 55%);
     }
     .holding-card.card-loss {
       border-left-color: var(--red);
-      background: linear-gradient(to right, rgba(248,81,73,0.05) 0%, var(--bg) 55%);
+      background: linear-gradient(to right, rgba(248,113,113,0.08) 0%, var(--surface) 55%);
     }
-    .holding-card:hover { background: rgba(48,54,61,0.6); transform: translateX(2px); }
-    .holding-card.card-profit:hover { background: linear-gradient(to right, rgba(63,185,80,0.09) 0%, rgba(48,54,61,0.4) 55%); }
-    .holding-card.card-loss:hover   { background: linear-gradient(to right, rgba(248,81,73,0.09) 0%, rgba(48,54,61,0.4) 55%); }
+    .holding-card:hover { background: rgba(255,255,255,.06); transform: translateX(2px);
+                          box-shadow: 0 4px 16px rgba(0,0,0,.40); }
+    .holding-card.card-profit:hover { background: linear-gradient(to right, rgba(52,211,153,0.14) 0%, rgba(255,255,255,.05) 55%); }
+    .holding-card.card-loss:hover   { background: linear-gradient(to right, rgba(248,113,113,0.14) 0%, rgba(255,255,255,.05) 55%); }
 
     .card-row1 { display: flex; justify-content: space-between; align-items: baseline; }
     .card-ticker { font-weight: 800; font-size: 0.9rem; color: var(--accent); letter-spacing: 0.03em; }
@@ -121,25 +162,27 @@
     .holding-mid { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.72rem; color: var(--muted); }
     .pnl-row { display: flex; justify-content: space-between; margin-top: 3px; font-size: 0.75rem; font-weight: 600; }
     /* watchlist compact rows */
-    .wl-list { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .wl-list { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+               background: var(--surface); }
     .wl-row {
       display: flex; align-items: center; padding: 5px 8px;
       border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s;
     }
     .wl-row:last-child { border-bottom: none; }
-    .wl-row:hover { background: var(--surface); }
+    .wl-row:hover { background: rgba(255,255,255,.06); }
     .up   { color: var(--green); }
     .down { color: var(--red); }
     .neutral { color: var(--muted); }
 
     .indicator-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
     .badge {
-      font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 700;
-      background: var(--border); color: var(--text); white-space: nowrap;
+      font-size: 0.65rem; padding: 2px 7px; border-radius: 999px; font-weight: 700;
+      background: rgba(255,255,255,.07); border: 1px solid var(--border);
+      color: var(--text); white-space: nowrap;
     }
-    .badge.warn { background: #3d2a00; color: var(--yellow); }
-    .badge.bull  { background: #1a3d2a; color: var(--green); }
-    .badge.bear  { background: #3d1a1a; color: var(--red); }
+    .badge.warn { background: rgba(251,191,36,.12); border-color: rgba(251,191,36,.30); color: var(--yellow); }
+    .badge.bull { background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.30); color: var(--green); }
+    .badge.bear { background: rgba(248,113,113,.12); border-color: rgba(248,113,113,.30); color: var(--red); }
 
     /* ── Chat area ── */
     .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -156,35 +199,43 @@
       padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap;
       word-break: break-word; font-size: 0.88rem;
     }
-    .msg.user .bubble     { background: var(--accent); color: #000; border-bottom-right-radius: 3px; }
+    .msg.user .bubble     { background: linear-gradient(135deg, var(--accent), var(--accent-2));
+                            color: #04211c; border-bottom-right-radius: 3px;
+                            box-shadow: 0 4px 16px rgba(46,230,197,.18); }
     .msg.assistant .bubble { background: var(--chat-bg); border: 1px solid var(--border);
-                              border-bottom-left-radius: 3px; color: var(--text); }
+                              border-bottom-left-radius: 3px; color: var(--text);
+                              box-shadow: 0 2px 12px rgba(0,0,0,.30); }
     .msg-meta { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
 
     .tool-pill {
       display: inline-flex; align-items: center; gap: 6px;
-      background: #1a2a1a; border: 1px solid #2d4a2d; border-radius: 20px;
-      padding: 5px 12px; font-size: 0.72rem; color: var(--green); margin-bottom: 6px;
+      background: rgba(46,230,197,.10); border: 1px solid rgba(46,230,197,.28);
+      border-radius: 999px;
+      padding: 5px 12px; font-size: 0.72rem; color: var(--accent); margin-bottom: 6px;
     }
-    .tool-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    .tool-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
                       animation: pulse 0.8s infinite; flex-shrink: 0; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
 
     /* Input bar */
     .input-bar {
-      padding: 14px 20px; border-top: 1px solid var(--border); background: var(--surface);
+      padding: 14px 20px; border-top: 1px solid var(--border); background: var(--glass);
+      backdrop-filter: blur(12px);
       display: flex; gap: 10px; align-items: flex-end;
     }
     #user-input {
-      flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      flex: 1; background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 12px;
       color: var(--text); padding: 10px 14px; font-size: 0.88rem; resize: none;
       min-height: 42px; max-height: 120px; font-family: inherit; outline: none;
+      transition: border-color .15s, box-shadow .15s;
     }
-    #user-input:focus { border-color: var(--accent); }
+    #user-input:focus { border-color: rgba(46,230,197,.55); box-shadow: 0 0 0 3px rgba(46,230,197,.10); }
     #send-btn {
-      background: var(--accent); color: #000; border: none; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #04211c; border: none; border-radius: 12px;
       width: 42px; height: 42px; cursor: pointer; font-size: 1.1rem; font-weight: 700;
       flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(46,230,197,.22);
     }
     #send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
@@ -195,12 +246,14 @@
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
       transition: all .15s;
     }
-    .qp:hover { border-color: var(--accent); color: var(--accent); }
+    .qp:hover { border-color: rgba(46,230,197,.45); color: var(--accent);
+                background: rgba(46,230,197,.08); }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(46,230,197,.35); }
 
     /* ── Portfolio Modal ── */
     .modal-overlay {
@@ -209,8 +262,11 @@
     }
     .modal-overlay.open { display: flex; }
     .modal {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), var(--surface));
+      border: 1px solid var(--border); border-radius: 20px;
       width: 520px; max-width: 95vw; max-height: 85vh; overflow-y: auto; padding: 24px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 40px rgba(46,230,197,.08);
+      backdrop-filter: blur(14px);
     }
     .modal h2 { font-size: 1rem; color: var(--accent); margin-bottom: 16px; }
     .modal-section { margin-bottom: 20px; }
@@ -218,13 +274,14 @@
                         letter-spacing: 1px; margin-bottom: 10px; }
     .holding-row {
       display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+      background: rgba(0,0,0,.30); border: 1px solid var(--border);
+      border-radius: 12px; padding: 8px 10px;
     }
     .holding-row input {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+      background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 8px;
       color: var(--text); padding: 5px 8px; font-size: 0.82rem; outline: none;
     }
-    .holding-row input:focus { border-color: var(--accent); }
+    .holding-row input:focus { border-color: rgba(46,230,197,.55); box-shadow: 0 0 0 3px rgba(46,230,197,.10); }
     .holding-row input.inp-ticker { width: 70px; font-weight: 700; text-transform: uppercase; }
     .holding-row input.inp-qty    { width: 70px; }
     .holding-row input.inp-price  { width: 90px; }
@@ -233,22 +290,25 @@
       margin-left: auto; background: none; border: none; color: var(--red);
       cursor: pointer; font-size: 1rem; padding: 2px 6px; border-radius: 4px;
     }
-    .del-btn:hover { background: #3d1a1a; }
+    .del-btn:hover { background: rgba(248,113,113,.15); }
     .add-row-btn {
-      background: none; border: 1px dashed var(--border); border-radius: 8px;
+      background: none; border: 1px dashed var(--border); border-radius: 12px;
       color: var(--muted); cursor: pointer; padding: 7px; font-size: 0.8rem;
       width: 100%; text-align: center; transition: all .15s;
     }
-    .add-row-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .add-row-btn:hover { border-color: rgba(46,230,197,.45); color: var(--accent);
+                         background: rgba(46,230,197,.06); }
     .watchlist-input {
-      width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      width: 100%; background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 10px;
       color: var(--text); padding: 8px 12px; font-size: 0.85rem; outline: none;
     }
-    .watchlist-input:focus { border-color: var(--accent); }
+    .watchlist-input:focus { border-color: rgba(46,230,197,.55); box-shadow: 0 0 0 3px rgba(46,230,197,.10); }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
     .btn-save {
-      background: var(--accent); color: #000; border: none; border-radius: 8px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #04211c; border: none; border-radius: 10px;
       padding: 8px 20px; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(46,230,197,.20);
     }
     .btn-cancel {
       background: none; border: 1px solid var(--border); border-radius: 8px;
@@ -256,6 +316,15 @@
     }
     .btn-cancel:hover { border-color: var(--red); color: var(--red); }
     .save-status { font-size: 0.78rem; color: var(--green); margin-right: auto; align-self: center; }
+    .save-status.err { color: var(--red); }
+
+    /* Change-password modal */
+    .pw-label {
+      display: block; font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px;
+    }
+    .pw-input { margin-bottom: 14px; }
+    .pw-input:last-child { margin-bottom: 0; }
 
     /* Loading skeleton */
     .skeleton { height: 14px; background: linear-gradient(90deg,var(--border) 25%,var(--surface) 50%,var(--border) 75%);
@@ -267,13 +336,15 @@
   <style>
     /* ── Charts panel (left column) ── */
     .charts-panel {
-      width: 240px; flex-shrink: 0; background: var(--surface);
+      width: 240px; flex-shrink: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bg);
       border-right: 1px solid var(--border); display: flex; flex-direction: column;
       overflow-y: auto; padding: 10px 8px; gap: 12px;
     }
     .chart-card {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
       padding: 10px; display: flex; flex-direction: column; gap: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.30);
     }
     .chart-title {
       font-size: .68rem; font-weight: 700; color: var(--muted);
@@ -286,7 +357,8 @@
 
     /* ── Watchlist right panel ── */
     .breadth-panel {
-      width: 300px; flex-shrink: 0; background: var(--surface);
+      width: 300px; flex-shrink: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bg);
       border-left: 1px solid var(--border); display: flex; flex-direction: column;
       overflow-y: auto; padding: 0;
     }
@@ -359,7 +431,8 @@
 
       /* Bottom nav bar */
       .bottom-nav {
-        display: flex; background: var(--surface);
+        display: flex; background: var(--glass);
+        backdrop-filter: blur(14px);
         border-top: 1px solid var(--border);
         flex-shrink: 0; z-index: 10;
       }
@@ -367,11 +440,16 @@
         flex: 1; display: flex; flex-direction: column; align-items: center;
         justify-content: center; padding: 8px 4px; gap: 3px;
         font-size: .65rem; color: var(--muted); cursor: pointer;
-        border: none; background: none; transition: color .15s;
+        border: none; background: none; transition: color .15s, background .15s;
+        margin: 5px 4px; border-radius: 12px;
       }
       .nav-tab .nav-icon { font-size: 1.3rem; }
-      .nav-tab.active { color: var(--accent); }
-      .nav-tab.active .nav-icon { filter: drop-shadow(0 0 4px var(--accent)); }
+      .nav-tab.active {
+        color: var(--accent);
+        background: rgba(46,230,197,.10);
+        box-shadow: inset 0 0 0 1px rgba(46,230,197,.22);
+      }
+      .nav-tab.active .nav-icon { filter: drop-shadow(0 0 5px var(--accent)); }
 
       /* Message bubbles full width on mobile */
       .msg { max-width: 95%; }
@@ -413,7 +491,7 @@
       .bottom-nav { display: none !important; }
     }
 
-    .bubble h3 { font-size:1rem; color:#7eb8f7; border-bottom:1px solid var(--border); padding-bottom:3px; margin:.6em 0 .3em; font-weight:700; }
+    .bubble h3 { font-size:1rem; color:var(--accent-2); border-bottom:1px solid var(--border); padding-bottom:3px; margin:.6em 0 .3em; font-weight:700; }
     .bubble h2 { font-size:1.05rem; font-weight:700; margin:.6em 0 .3em; }
     .bubble strong { font-weight:600; }
     .bubble ul,.bubble ol { padding-left:1.3em; margin:.3em 0; }
@@ -431,10 +509,17 @@
 <header>
   <h1><img src="/static/logo.png" alt="Logo" /> Trading Sentinel <span>US Market · Short-Term</span></h1>
   <span id="market-time">Loading...<span id="sse-dot" title="Live price feed"></span></span>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto">
     <button id="digest-btn" onclick="triggerDailyDigest()">📊 Daily Digest</button>
-    <button id="check-btn" onclick="triggerCheckNow()" style="background:var(--yellow);color:#000;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
-    <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:#6e40c9;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
+    <button id="check-btn" onclick="triggerCheckNow()" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">⚡ Warnings</button>
+    <button id="suggest-btn" onclick="triggerSuggestWatchlist()" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:9px;padding:6px 14px;font-size:0.8rem;cursor:pointer;font-weight:600">🔍 Watchlist (400+)</button>
+    {% if user %}
+    <div class="user-chip">
+      <strong>{{ user.display_name or user.email }}</strong>
+      <a href="#" onclick="openPasswordModal();return false" title="Change password">Password</a>
+      <a href="{{ url_for('logout') }}" title="Sign out">Sign out</a>
+    </div>
+    {% endif %}
   </div>
 </header>
 
@@ -477,6 +562,28 @@
     </div>
     <div style="font-size:.68rem;color:var(--muted);margin-top:8px">
       Paste copied JSON as <code style="background:var(--bg);padding:1px 4px;border-radius:3px">PORTFOLIO_JSON</code> in Railway → Variables to persist data across deploys.
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal-overlay" id="password-modal">
+  <div class="modal" style="max-width:400px">
+    <h2>🔑 Change Password</h2>
+    <div class="modal-section">
+      <label for="pw-current" class="pw-label">Current password</label>
+      <input id="pw-current" class="watchlist-input pw-input" type="password" autocomplete="current-password">
+
+      <label for="pw-new" class="pw-label">New password</label>
+      <input id="pw-new" class="watchlist-input pw-input" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+
+      <label for="pw-confirm" class="pw-label">Confirm new password</label>
+      <input id="pw-confirm" class="watchlist-input pw-input" type="password" autocomplete="new-password">
+    </div>
+    <div class="modal-actions">
+      <span class="save-status" id="pw-status"></span>
+      <button class="btn-cancel" onclick="closePasswordModal()">Cancel</button>
+      <button class="btn-save" id="pw-save-btn" onclick="submitPasswordChange()">Update</button>
     </div>
   </div>
 </div>
@@ -588,14 +695,30 @@ Quick starts:
 <div id="tab-actions-sheet" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:flex-end" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:var(--surface);border-radius:16px 16px 0 0;padding:20px;width:100%;display:flex;flex-direction:column;gap:10px">
     <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Quick Actions</div>
-    <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest</button>
-    <button onclick="triggerCheckNow();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:var(--yellow);color:#000;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">⚡ Check Warnings Now</button>
-    <button onclick="triggerSuggestWatchlist();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:#6e40c9;color:#fff;border:none;border-radius:8px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">🔍 Auto-Suggest Watchlist</button>
-    <button onclick="document.getElementById('tab-actions-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
+    <button onclick="triggerDailyDigest();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#04211c;border:none;border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">📊 Daily Digest</button>
+    <button onclick="triggerCheckNow();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.32);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">⚡ Check Warnings Now</button>
+    <button onclick="triggerSuggestWatchlist();document.getElementById('tab-actions-sheet').style.display='none';switchTab('chat')" style="background:rgba(139,124,246,.14);color:#b3a8ff;border:1px solid rgba(139,124,246,.34);border-radius:12px;padding:12px;font-size:.9rem;font-weight:700;cursor:pointer">🔍 Auto-Suggest Watchlist</button>
+    <button onclick="document.getElementById('tab-actions-sheet').style.display='none';openPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">🔑 Change Password</button>
+    <a href="/logout" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer;text-align:center;text-decoration:none">Sign out</a>
+    <button onclick="document.getElementById('tab-actions-sheet').style.display='none'" style="background:none;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:.85rem;color:var(--muted);cursor:pointer">Cancel</button>
   </div>
 </div>
 
 <script>
+  // A session can expire while the page is open. Without this, every panel just
+  // fails silently and the user stares at "Loading...". Bounce to the login page
+  // instead, remembering where they were.
+  (function () {
+    const _fetch = window.fetch;
+    window.fetch = async function (...args) {
+      const resp = await _fetch.apply(this, args);
+      if (resp.status === 401) {
+        window.location = '/login?next=' + encodeURIComponent(location.pathname);
+      }
+      return resp;
+    };
+  })();
+
   let chatHistory = [];
   let isStreaming = false;
 
@@ -1088,6 +1211,54 @@ Quick starts:
 
   function closePortfolioModal() {
     document.getElementById('portfolio-modal').classList.remove('open');
+  }
+
+  // ── Change password ──
+  function openPasswordModal() {
+    ['pw-current','pw-new','pw-confirm'].forEach(id => document.getElementById(id).value = '');
+    setPwStatus('', false);
+    document.getElementById('password-modal').classList.add('open');
+    document.getElementById('pw-current').focus();
+  }
+
+  function closePasswordModal() {
+    document.getElementById('password-modal').classList.remove('open');
+  }
+
+  function setPwStatus(text, isError) {
+    const el = document.getElementById('pw-status');
+    el.textContent = text;
+    el.classList.toggle('err', !!isError);
+  }
+
+  async function submitPasswordChange() {
+    const current = document.getElementById('pw-current').value;
+    const next    = document.getElementById('pw-new').value;
+    const confirm = document.getElementById('pw-confirm').value;
+
+    // Caught here rather than server-side: a mistyped confirmation is the user's
+    // own typo, not something the server should have to arbitrate.
+    if (next !== confirm) { setPwStatus('The two new passwords do not match.', true); return; }
+    if (next.length < 8)  { setPwStatus('New password must be at least 8 characters.', true); return; }
+
+    const btn = document.getElementById('pw-save-btn');
+    btn.disabled = true;
+    setPwStatus('Saving...', false);
+    try {
+      const res  = await fetch('/account/password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ current_password: current, new_password: next })
+      });
+      const data = await res.json();
+      if (!data.ok) { setPwStatus(data.error || 'Could not change the password.', true); return; }
+      setPwStatus('Password changed.', false);
+      setTimeout(closePasswordModal, 1200);
+    } catch (e) {
+      setPwStatus('Request failed: ' + e.message, true);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function copyPortfolioJson(btn) {

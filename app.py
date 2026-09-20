@@ -8,20 +8,41 @@ from zoneinfo import ZoneInfo
 _ET   = ZoneInfo("America/New_York")
 _GMT7 = timezone(timedelta(hours=7))
 
-from flask import Flask, render_template, request, Response, jsonify
+from flask import (
+    Flask, render_template, request, Response, jsonify, session, redirect,
+    url_for,
+)
 from dotenv import load_dotenv
 from trading_bot import (
     chat_stream, get_portfolio_snapshot, get_watchlist_snapshot,
     run_daily_digest, load_portfolio, save_portfolio, send_alert, get_stock_data, get_market_news,
     get_market_breadth, load_journal, add_journal_entry, delete_journal_entry,
+    set_current_user, current_user_id,
     _yf_session,
 )
+import auth
+from auth import login_required
 from screener import ai_suggest_watchlist
 import yfinance as _yf
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# Signed session cookie. Required — without a stable key every restart would log
+# everyone out, and a guessable one would let anyone forge a session.
+app.secret_key = os.getenv("SECRET_KEY") or os.urandom(32)
+if not os.getenv("SECRET_KEY"):
+    print("[auth] SECRET_KEY unset — using a random key; sessions reset on restart")
+app.permanent_session_lifetime = timedelta(days=30)
+
+
+@app.before_request
+def _bind_current_user():
+    """Every request runs with the logged-in user bound to the context var that
+    load_portfolio() and the journal read. Cron routes overwrite it with the
+    owner; everything else gets the session user or None."""
+    set_current_user(session.get("uid"))
 
 # ---------------------------------------------------------------------------
 # Simple TTL cache — prevents hammering yfinance on every 60-second refresh
@@ -59,11 +80,17 @@ def _cached_fetch(key, fetch_fn):
 # ---------------------------------------------------------------------------
 # Live price fetching — each SSE connection fetches independently (no shared thread)
 # ---------------------------------------------------------------------------
-_fast_prices: dict = {}   # "TICKER#lot" (holdings) or "TICKER" (watchlist) -> last known payload
+# user id -> {"TICKER#lot" (holdings) or "TICKER" (watchlist): last known payload}.
+# Keyed by user because the payloads carry that user's lot indices, quantities
+# and P&L — a shared dict would hand one account another's positions.
+_fast_prices: dict = {}
+
+def _last_prices(uid) -> list:
+    return list(_fast_prices.get(uid, {}).values())
 
 def _fetch_live_prices() -> list:
     """Batch-fetch latest price + day-change for portfolio holdings AND watchlist."""
-    global _fast_prices
+    uid        = current_user_id()
     portfolio  = load_portfolio()
     holdings   = portfolio.get("holdings", [])
     raw_wl     = portfolio.get("watchlist", [])
@@ -135,11 +162,11 @@ def _fetch_live_prices() -> list:
                 "day_change_dollar":round(current - prev_close, 2),
             }
 
-        _fast_prices = fresh
+        _fast_prices[uid] = fresh
         return list(fresh.values())
     except Exception as e:
         print(f"[LivePrice] batch error: {e}")
-        return list(_fast_prices.values())
+        return _last_prices(uid)
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +194,10 @@ _sent_alerts: set = _load_sent_alerts()
 
 
 def _alert_key(ticker: str, alert_type: str) -> str:
-    """One alert per ticker per type per calendar day."""
+    """One alert per user per ticker per type per calendar day. The user id is
+    part of the key so one account's alert can never suppress another's."""
     day = datetime.now().strftime("%Y-%m-%d")
-    return f"{day}:{ticker}:{alert_type}"
+    return f"{day}:{current_user_id()}:{ticker}:{alert_type}"
 
 
 # ---------------------------------------------------------------------------
@@ -283,15 +311,108 @@ def auto_scan_watchlist():
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        if session.get("uid"):
+            return redirect(url_for("index"))
+        return render_template("login.html", mode="login",
+                               allow_registration=auth.ALLOW_REGISTRATION)
+
+    email    = (request.form.get("email") or "").strip()
+    password = request.form.get("password") or ""
+    try:
+        user = auth.verify_login(email, password)
+    except Exception as e:
+        return render_template("login.html", mode="login", email=email,
+                               allow_registration=auth.ALLOW_REGISTRATION,
+                               error=f"Could not reach the database: {e}"), 503
+
+    if not user:
+        # Deliberately does not say which of the two was wrong.
+        return render_template("login.html", mode="login", email=email,
+                               allow_registration=auth.ALLOW_REGISTRATION,
+                               error="Incorrect email or password."), 401
+
+    session.permanent = True
+    session["uid"] = user["id"]
+    auth.touch_last_login(user["id"])
+
+    # Only accept a same-site relative path, so ?next= cannot bounce to another host.
+    nxt = request.args.get("next") or request.form.get("next") or ""
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = url_for("index")
+    return redirect(nxt)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if not auth.ALLOW_REGISTRATION:
+        return render_template("login.html", mode="login",
+                               allow_registration=False,
+                               error="Registration is closed."), 403
+
+    if request.method == "GET":
+        return render_template("login.html", mode="register",
+                               allow_registration=True)
+
+    email    = (request.form.get("email") or "").strip()
+    password = request.form.get("password") or ""
+    if "@" not in email or len(password) < 8:
+        return render_template("login.html", mode="register", email=email,
+                               allow_registration=True,
+                               error="Enter a valid email and a password of at "
+                                     "least 8 characters."), 400
+    try:
+        if auth.get_user_by_email(email):
+            return render_template("login.html", mode="register", email=email,
+                                   allow_registration=True,
+                                   error="That email is already registered."), 409
+        user = auth.create_user(email, password)
+    except Exception as e:
+        return render_template("login.html", mode="register", email=email,
+                               allow_registration=True,
+                               error=f"Could not create the account: {e}"), 500
+
+    session.permanent = True
+    session["uid"] = user["id"]
+    return redirect(url_for("index"))
+
+
+@app.route("/logout", methods=["GET", "POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/account/password", methods=["POST"])
+@login_required
+def account_password():
+    body = request.json or {}
+    try:
+        err = auth.change_password(
+            session["uid"],
+            body.get("current_password") or "",
+            body.get("new_password") or "",
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not reach the database: {e}"}), 503
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True, "message": "Password changed."})
+
+
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", user=auth.current_user())
 
 
 @app.route("/portfolio")
+@login_required
 def portfolio():
     try:
-        data, stale = _cached_fetch("portfolio", get_portfolio_snapshot)
+        data, stale = _cached_fetch(f"portfolio:{current_user_id()}", get_portfolio_snapshot)
         resp = jsonify(data)
         resp.headers["Cache-Control"] = "no-store"
         if stale:
@@ -302,6 +423,7 @@ def portfolio():
 
 
 @app.route("/api/prices")
+@login_required
 def get_prices():
     """Short-lived JSON endpoint — client polls every 30 s instead of holding an SSE connection."""
     try:
@@ -309,13 +431,14 @@ def get_prices():
         return jsonify(prices)
     except Exception as e:
         print(f"[prices] {e}")
-        return jsonify(list(_fast_prices.values()))
+        return jsonify(_last_prices(current_user_id()))
 
 
 @app.route("/watchlist")
+@login_required
 def watchlist():
     try:
-        data, stale = _cached_fetch("watchlist", get_watchlist_snapshot)
+        data, stale = _cached_fetch(f"watchlist:{current_user_id()}", get_watchlist_snapshot)
         resp = jsonify(data)
         resp.headers["Cache-Control"] = "no-store"
         if stale:
@@ -326,28 +449,34 @@ def watchlist():
 
 
 @app.route("/daily-digest", methods=["POST"])
+@login_required
 def daily_digest():
     msg = run_daily_digest()
     return jsonify({"message": msg})
 
 
 @app.route("/suggest-watchlist", methods=["POST"])
+@login_required
 def suggest_watchlist():
     result = ai_suggest_watchlist(top_n_final=6)
     return jsonify(result)
 
 
 @app.route("/check-now", methods=["POST"])
+@login_required
 def check_now():
     """Manually trigger an immediate warning check."""
     global _sent_alerts
-    _sent_alerts = set()
+    # Clear only this user's dedup keys — another account's alerts stay suppressed.
+    marker = f":{current_user_id()}:"
+    _sent_alerts = {k for k in _sent_alerts if marker not in k}
     _save_sent_alerts(_sent_alerts)
     check_warnings(force=True)
     return jsonify({"message": "Warning check complete. Alerts sent if any found."})
 
 
 @app.route("/portfolio-data")
+@login_required
 def portfolio_data():
     resp = jsonify(load_portfolio())
     resp.headers["Cache-Control"] = "no-store"
@@ -355,8 +484,10 @@ def portfolio_data():
 
 
 @app.route("/portfolio-update", methods=["POST"])
+@login_required
 def portfolio_update():
     data = request.json or {}
+    uid = current_user_id()
     p = load_portfolio()
     p["holdings"]  = data.get("holdings",  p.get("holdings", []))
     p["watchlist"] = data.get("watchlist", p.get("watchlist", []))
@@ -364,14 +495,16 @@ def portfolio_update():
         save_portfolio(p)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
-    # Drop the cached snapshots so the edit shows up on the next /portfolio
-    # and /watchlist fetch instead of waiting out the 120s TTL.
-    _cache.pop("portfolio", None)
-    _cache.pop("watchlist", None)
+    # Drop this user's cached snapshots so the edit shows up on the next
+    # /portfolio and /watchlist fetch instead of waiting out the 120s TTL.
+    _cache.pop(f"portfolio:{uid}", None)
+    _cache.pop(f"watchlist:{uid}", None)
+    _fast_prices.pop(uid, None)
     return jsonify({"ok": True})
 
 
 @app.route("/chat", methods=["POST"])
+@login_required
 def chat():
     body = request.json or {}
     user_message = body.get("message", "").strip()
@@ -379,19 +512,42 @@ def chat():
     if not user_message:
         return jsonify({"error": "Empty message"}), 400
 
+    uid = current_user_id()
+
     def generate():
-        yield from chat_stream(user_message, history)
+        # A streamed response is consumed after the request context is gone, so
+        # re-bind the user here — the chat tools call load_portfolio() and would
+        # otherwise see no user at all.
+        set_current_user(uid)
+        # Write-only log: recorded for the user's own record, never fed back
+        # into the prompt. `history` still comes from the browser as before.
+        auth.log_chat(uid, "user", user_message)
+        parts = []
+        for frame in chat_stream(user_message, history):
+            # Frames look like: data: {"type":"text","text":"..."}\n\n
+            payload = frame[6:].strip() if frame.startswith("data: ") else ""
+            if payload and payload != "[DONE]":
+                try:
+                    obj = json.loads(payload)
+                    if obj.get("type") == "text":
+                        parts.append(obj.get("text", ""))
+                except Exception:
+                    pass
+            yield frame
+        auth.log_chat(uid, "assistant", "".join(parts))
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/market-breadth")
+@login_required
 def market_breadth():
     return jsonify(get_market_breadth())
 
 
 @app.route("/position-size", methods=["POST"])
+@login_required
 def position_size():
     d        = request.json or {}
     entry    = float(d.get("entry",    0))
@@ -423,10 +579,12 @@ def position_size():
 
 
 @app.route("/journal")
+@login_required
 def journal():
     return jsonify(load_journal())
 
 @app.route("/journal/add", methods=["POST"])
+@login_required
 def journal_add():
     entry = request.json or {}
     if not entry.get("ticker"):
@@ -434,6 +592,7 @@ def journal_add():
     return jsonify(add_journal_entry(entry))
 
 @app.route("/journal/delete/<entry_id>", methods=["DELETE"])
+@login_required
 def journal_delete(entry_id):
     ok = delete_journal_entry(entry_id)
     return jsonify({"ok": ok})
@@ -464,33 +623,70 @@ def _verify_cron():
         return None
     return jsonify({"ok": False, "error": "unauthorized"}), 401
 
+
+def _bind_owner():
+    """Scheduled jobs run for the owner account.
+
+    Alerts and digests go to one Discord webhook from a global env var, so there
+    is exactly one destination — running cron for every registered user would
+    send them all to that same channel. Other accounts get the full web app but
+    no scheduled alerts.
+
+    Returns an error response if there is no owner yet, else None.
+    """
+    try:
+        owner = auth.get_owner()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"owner lookup failed: {e}"}), 503
+    if not owner:
+        return jsonify({"ok": False,
+                        "error": "no owner account — POST /admin/bootstrap first"}), 409
+    set_current_user(owner["id"])
+    return None
+
+
 @app.route("/cron/daily-digest")
 def cron_daily_digest():
-    err = _verify_cron()
+    err = _verify_cron() or _bind_owner()
     if err: return err
     msg = run_daily_digest()
     return jsonify({"ok": True, "message": msg})
 
 @app.route("/cron/close-summary")
 def cron_close_summary():
-    err = _verify_cron()
+    err = _verify_cron() or _bind_owner()
     if err: return err
     msg = run_daily_digest()
     return jsonify({"ok": True, "message": msg})
 
 @app.route("/cron/check-warnings")
 def cron_check_warnings():
-    err = _verify_cron()
+    err = _verify_cron() or _bind_owner()
     if err: return err
     check_warnings()
     return jsonify({"ok": True})
 
 @app.route("/cron/watchlist-scan")
 def cron_watchlist_scan():
-    err = _verify_cron()
+    err = _verify_cron() or _bind_owner()
     if err: return err
     auto_scan_watchlist()
     return jsonify({"ok": True})
+
+
+@app.route("/admin/bootstrap", methods=["POST"])
+def admin_bootstrap():
+    """One-time migration off the pre-accounts global app_state row.
+
+    Guarded by the same CRON_SECRET as the scheduled routes. Idempotent, and it
+    never modifies or deletes app_state — that row stays as a rollback path.
+    """
+    err = _verify_cron()
+    if err: return err
+    try:
+        return jsonify({"ok": True, **auth.bootstrap_owner()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":

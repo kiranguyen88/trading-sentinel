@@ -2,6 +2,7 @@ import os
 import json
 import math
 import time
+from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 
 _GMT7 = timezone(timedelta(hours=7))
@@ -74,7 +75,27 @@ _SUPABASE_URL = (os.getenv("SUPABASE_URL") or "https://fcwpjsezrwnjxrqpuwvc.supa
 _SUPABASE_KEY = (os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
                  or os.getenv("SUPABASE_KEY"))
 _SUPABASE_OK = bool(_SUPABASE_URL and _SUPABASE_KEY)
-_STATE_ID = "portfolio"   # primary key of the row holding the whole snapshot
+_STATE_ID = "portfolio"   # legacy app_state row, kept for the one-time migration
+
+
+# ---------------------------------------------------------------------------
+# Current user
+#
+# Portfolio data is per-user, but load_portfolio() is called from nine places
+# across three modules — including chat tools and the screener, which have no
+# request context to pass a user id through. Threading a parameter through all
+# of them would mean changing every tool signature, so the request's user is
+# carried in a context variable instead and every existing caller stays as-is.
+# ---------------------------------------------------------------------------
+_current_user: ContextVar[str | None] = ContextVar("current_user", default=None)
+
+
+def set_current_user(uid: str | None) -> None:
+    _current_user.set(uid)
+
+
+def current_user_id() -> str | None:
+    return _current_user.get()
 
 
 def _sb_headers() -> dict:
@@ -86,14 +107,9 @@ def _sb_headers() -> dict:
 
 
 def _sb_load(attempts: int = 3) -> dict | None:
-    """Read the portfolio JSON from Supabase.
-
-    Returns the stored dict, or None when the row genuinely does not exist.
-    Raises if Supabase could not be reached after `attempts` tries — the
-    caller MUST treat that as "unknown", never as "empty", because the two
-    are indistinguishable to a naive caller and only one of them is safe to
-    overwrite.
-    """
+    """Read the LEGACY global app_state row. Only bootstrap_owner() uses this
+    now; live reads go through _sb_load_user(). Kept so the migration can copy
+    the pre-accounts portfolio across."""
     last_err = None
     for i in range(attempts):
         try:
@@ -112,47 +128,82 @@ def _sb_load(attempts: int = 3) -> dict | None:
     raise last_err
 
 
-def _sb_save(data: dict) -> None:
-    """Upsert the portfolio JSON into Supabase (single row, strongly consistent)."""
+def _sb_load_user(uid: str, attempts: int = 3) -> dict | None:
+    """Read one user's portfolio JSON from Supabase.
+
+    Returns the stored dict, or None when the row genuinely does not exist.
+    Raises if Supabase could not be reached after `attempts` tries — the
+    caller MUST treat that as "unknown", never as "empty", because the two
+    are indistinguishable to a naive caller and only one of them is safe to
+    overwrite.
+    """
+    last_err = None
+    for i in range(attempts):
+        try:
+            r = requests.get(
+                f"{_SUPABASE_URL}/rest/v1/user_state",
+                params={"user_id": f"eq.{uid}", "select": "data"},
+                headers=_sb_headers(), timeout=15,
+            )
+            r.raise_for_status()
+            rows = r.json()
+            return rows[0]["data"] if rows else None
+        except Exception as e:
+            last_err = e
+            if i < attempts - 1:
+                time.sleep(0.5 * (2 ** i))
+    raise last_err
+
+
+def _sb_save_user(uid: str, data: dict) -> None:
+    """Upsert one user's portfolio JSON (one row per user, strongly consistent)."""
     r = requests.post(
-        f"{_SUPABASE_URL}/rest/v1/app_state",
-        params={"on_conflict": "id"},
+        f"{_SUPABASE_URL}/rest/v1/user_state",
+        params={"on_conflict": "user_id"},
         headers={**_sb_headers(), "prefer": "resolution=merge-duplicates"},
-        json=[{"id": _STATE_ID, "data": data,
+        json=[{"user_id": uid, "data": data,
                "updated_at": datetime.now(timezone.utc).isoformat()}],
         timeout=15,
     )
     r.raise_for_status()
 
 
-# Last value successfully read out of Supabase in this process. Used as the
-# fallback when Supabase is briefly unreachable, so a blip cannot demote a warm
-# instance all the way down to the bundled seed.
-_last_good_portfolio: dict | None = None
+# Last value successfully read out of Supabase in this process, per user. Used
+# as the fallback when Supabase is briefly unreachable, so a blip cannot demote
+# a warm instance all the way down to the bundled seed.
+_last_good_portfolio: dict[str, dict] = {}
+
+_EMPTY_PORTFOLIO = {"holdings": [], "watchlist": []}
 
 
 def load_portfolio() -> dict:
-    """Read the portfolio. NEVER writes — a read path that can write is how the
-    live portfolio got replaced by the bundled seed (a single Supabase timeout
-    was enough). Seeding happens only in seed_portfolio_if_empty()."""
-    global _last_good_portfolio
+    """Read the current user's portfolio. NEVER writes — a read path that can
+    write is how the live portfolio got replaced by the bundled seed (a single
+    Supabase timeout was enough). Seeding happens only in
+    seed_portfolio_if_empty()."""
+    uid = current_user_id()
 
     # 0. Supabase — durable source of truth when configured.
-    if _SUPABASE_OK:
+    if _SUPABASE_OK and uid:
         try:
-            data = _sb_load()
+            data = _sb_load_user(uid)
             if data:
-                _last_good_portfolio = data
+                _last_good_portfolio[uid] = data
                 return data
-            # Reached Supabase and the row is genuinely absent: fall through to
-            # the local/env/seed chain, but still without writing anything.
-            print("[portfolio] Supabase reachable but app_state row is empty")
+            # Reached Supabase and the row is genuinely absent: this is a new
+            # account with nothing in it yet. Empty, not "fall back to someone
+            # else's seed data".
+            return dict(_EMPTY_PORTFOLIO)
         except Exception as e:
             # Unreachable != empty. Serve the best thing we already have and
             # leave the stored row completely untouched.
             print(f"[portfolio] Supabase unreachable, serving cached copy: {e}")
-            if _last_good_portfolio:
-                return _last_good_portfolio
+            if uid in _last_good_portfolio:
+                return _last_good_portfolio[uid]
+            return dict(_EMPTY_PORTFOLIO)
+
+    # Below here we have no user (offline dev, or a script run outside a
+    # request). Fall back to the old single-tenant chain, read-only as before.
 
     # 1. Local file (dev source of truth; ephemeral cache on Vercel)
     if os.path.exists(_PORTFOLIO_PATH):
@@ -178,31 +229,39 @@ def load_portfolio() -> dict:
 
 
 def seed_portfolio_if_empty() -> bool:
-    """Write the bundled defaults to Supabase only if the row is truly absent.
+    """Write the bundled defaults for the current user only if their row is
+    truly absent.
 
     Explicit and separate from load_portfolio() so no read path can ever write.
     Returns True if a seed was written. Any Supabase error aborts the seed.
     """
-    if not _SUPABASE_OK:
+    uid = current_user_id()
+    if not _SUPABASE_OK or not uid:
         return False
-    if _sb_load():             # raises if unreachable — abort rather than guess
+    if _sb_load_user(uid):     # raises if unreachable — abort rather than guess
         return False
     with open("portfolio.json") as f:
         data = json.load(f)
-    _sb_save(data)
-    print("[portfolio] seeded empty app_state row with bundled defaults")
+    _sb_save_user(uid, data)
+    print(f"[portfolio] seeded empty user_state row for {uid} with bundled defaults")
     return True
 
 
 def save_portfolio(data: dict) -> None:
     # Durable store first. Raise on failure so callers can report it instead of
     # silently losing the user's edit.
+    uid = current_user_id()
     db_ok = False
-    if _SUPABASE_OK:
-        _sb_save(data)
+    if _SUPABASE_OK and uid:
+        _sb_save_user(uid, data)
+        _last_good_portfolio[uid] = data
         db_ok = True
 
-    # Local file: source of truth for local dev, ephemeral cache on Vercel.
+    # Local file: source of truth for local dev only. With accounts in play it
+    # would be one shared file across users, so it is written only when there is
+    # no user to scope the data to.
+    if uid and db_ok:
+        return
     try:
         dir_ = os.path.dirname(_PORTFOLIO_PATH)
         if dir_:
@@ -700,34 +759,95 @@ Always use tools for live data — never guess prices or news from memory."""
 # Trade Journal
 # ---------------------------------------------------------------------------
 
+# Entries live in Supabase, scoped to the current user. They used to be written
+# to a local journal.json, which Vercel wipes on every cold start — so entries
+# silently vanished. JOURNAL_FILE remains only as the offline-dev fallback for
+# when there is no user or no database.
 JOURNAL_FILE = "journal.json"
 
-def load_journal() -> list:
+
+def _journal_local_load() -> list:
     if not os.path.exists(JOURNAL_FILE):
         return []
     with open(JOURNAL_FILE) as f:
         return json.load(f)
 
-def save_journal(entries: list):
+
+def _journal_local_save(entries: list):
     with open(JOURNAL_FILE, "w") as f:
         json.dump(entries, f, indent=2)
 
+
+def _journal_db_ok() -> str | None:
+    """Return the user id to store entries under, or None to use the local file."""
+    uid = current_user_id()
+    return uid if (_SUPABASE_OK and uid) else None
+
+
+def load_journal() -> list:
+    uid = _journal_db_ok()
+    if not uid:
+        return _journal_local_load()
+    r = requests.get(
+        f"{_SUPABASE_URL}/rest/v1/journal_entries",
+        params={"user_id": f"eq.{uid}", "select": "data",
+                "order": "created_at.desc"},
+        headers=_sb_headers(), timeout=15,
+    )
+    r.raise_for_status()
+    return [row["data"] for row in r.json()]
+
+
+def save_journal(entries: list):
+    """Full-list replace. Only the local-file path needs it — the database path
+    adds and deletes individual rows."""
+    if not _journal_db_ok():
+        _journal_local_save(entries)
+
+
 def add_journal_entry(entry: dict) -> dict:
-    entries = load_journal()
-    entry["id"]   = f"trade_{len(entries)+1}_{datetime.now(_GMT7).strftime('%Y%m%d%H%M%S')}"
-    entry["date"] = entry.get("date") or datetime.now(_GMT7).strftime("%Y-%m-%d")
-    entry["created_at"] = datetime.now(_GMT7).isoformat()
-    entries.append(entry)
-    save_journal(entries)
+    now = datetime.now(_GMT7)
+    entry["id"] = entry.get("id") or f"trade_{now.strftime('%Y%m%d%H%M%S%f')}"
+    entry["date"] = entry.get("date") or now.strftime("%Y-%m-%d")
+    entry["created_at"] = now.isoformat()
+
+    uid = _journal_db_ok()
+    if not uid:
+        entries = _journal_local_load()
+        entries.append(entry)
+        _journal_local_save(entries)
+        return entry
+
+    r = requests.post(
+        f"{_SUPABASE_URL}/rest/v1/journal_entries",
+        headers=_sb_headers(),
+        json=[{"id": entry["id"], "user_id": uid, "data": entry}],
+        timeout=15,
+    )
+    r.raise_for_status()
     return entry
 
+
 def delete_journal_entry(entry_id: str) -> bool:
-    entries = load_journal()
-    new = [e for e in entries if e.get("id") != entry_id]
-    if len(new) == len(entries):
-        return False
-    save_journal(new)
-    return True
+    uid = _journal_db_ok()
+    if not uid:
+        entries = _journal_local_load()
+        new = [e for e in entries if e.get("id") != entry_id]
+        if len(new) == len(entries):
+            return False
+        _journal_local_save(new)
+        return True
+
+    # Scope the delete by user_id as well as id, so one account can never remove
+    # another account's entry by guessing its id.
+    r = requests.delete(
+        f"{_SUPABASE_URL}/rest/v1/journal_entries",
+        params={"id": f"eq.{entry_id}", "user_id": f"eq.{uid}"},
+        headers={**_sb_headers(), "prefer": "return=representation"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return bool(r.json())
 
 
 # ---------------------------------------------------------------------------

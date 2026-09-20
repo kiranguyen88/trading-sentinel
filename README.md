@@ -1,6 +1,6 @@
 # 📡 Trading Sentinel
 
-An AI-powered US stock portfolio monitor with real-time technical analysis, Gemini AI chat, automated WhatsApp alerts, and a live web dashboard.
+An AI-powered US stock portfolio monitor with real-time technical analysis, Gemini AI chat, automated Discord alerts, and a live web dashboard.
 
 ---
 
@@ -8,7 +8,7 @@ An AI-powered US stock portfolio monitor with real-time technical analysis, Gemi
 
 - **Live Dashboard** — Portfolio and watchlist with real-time prices, RSI, MACD, Bollinger Bands, P&L
 - **AI Chat** — Ask anything about your portfolio using Google Gemini 2.5 Flash (short-term trading focus: breakouts, momentum, catalyst plays)
-- **WhatsApp Alerts** — Automatic alerts for RSI extremes, MACD crossovers, price drops/surges, volume spikes
+- **Discord Alerts** — Automatic alerts for RSI extremes, MACD crossovers, price drops/surges, volume spikes
 - **Auto Screener** — Scans 400+ US stocks across 20 sectors, AI picks the best 5–6 mid-term setups daily
 - **Scheduled Jobs** — Daily digest at 6 PM VN, warning monitor every 15 min, after-close summary
 - **Mobile Responsive** — Bottom tab navigation for phone use
@@ -22,7 +22,7 @@ An AI-powered US stock portfolio monitor with real-time technical analysis, Gemi
 | Backend | Python 3, Flask |
 | AI | Google Gemini 2.5 Flash (google-genai SDK) |
 | Market Data | yfinance (Yahoo Finance) |
-| Alerts | Twilio WhatsApp API |
+| Alerts | Discord webhook |
 | Scheduler | APScheduler |
 | Frontend | HTML/CSS/JS, Chart.js, Marked.js |
 | Deployment | Railway |
@@ -36,7 +36,7 @@ Trading/
 ├── app.py              # Flask server, routes, scheduler
 ├── trading_bot.py      # Core engine: data, AI chat, alerts, digest
 ├── screener.py         # 200+ stock screener + AI watchlist suggestions
-├── portfolio.json      # Holdings, watchlist, WhatsApp numbers
+├── portfolio.json      # Bundled seed holdings/watchlist (live data lives in Supabase)
 ├── requirements.txt    # Python dependencies
 ├── .env                # API keys (never commit)
 └── templates/
@@ -64,9 +64,12 @@ pip install -r requirements.txt
 
 ```env
 GEMINI_API_KEY=your_google_ai_studio_key
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+SECRET_KEY=a_long_random_string_for_session_cookies
+OWNER_EMAIL=you@example.com
+OWNER_PASSWORD=your_first_login_password
+CRON_SECRET=a_random_string
 PORT=5000
 ```
 
@@ -80,9 +83,7 @@ Edit `portfolio.json`:
     {"ticker": "AAPL", "quantity": 10, "avg_buy_price": 175.0},
     {"ticker": "NVDA", "quantity": 5,  "avg_buy_price": 800.0}
   ],
-  "watchlist": ["META", "AMD", "PLTR"],
-  "whatsapp_number": "whatsapp:+1234567890",
-  "whatsapp_numbers": ["whatsapp:+1234567890"]
+  "watchlist": ["META", "AMD", "PLTR"]
 }
 ```
 
@@ -114,11 +115,10 @@ Your app will be live at `https://your-app.up.railway.app`
 2. Create API key
 3. Enable billing for paid tier (free tier = 50 req/day)
 
-### Twilio WhatsApp
-1. Go to [console.twilio.com](https://console.twilio.com)
-2. Messaging → Try it out → Send a WhatsApp message
-3. Join the sandbox by sending `join <keyword>` to `+1 415 523 8886`
-4. Note: sandbox requires re-joining every 72 hours
+### Discord
+1. In your Discord server: Server Settings → Integrations → Webhooks → New Webhook
+2. Pick the channel the alerts should land in, then Copy Webhook URL
+3. Put it in `DISCORD_WEBHOOK_URL`
 
 ---
 
@@ -126,14 +126,14 @@ Your app will be live at `https://your-app.up.railway.app`
 
 | Time (VN) | Job |
 |---|---|
-| 5:55 PM Mon–Fri | AI screener — scan 400+ stocks, update watchlist, send WhatsApp |
-| 6:00 PM Mon–Fri | Daily digest to WhatsApp |
+| 5:55 PM Mon–Fri | AI screener — scan 400+ stocks, update watchlist, send to Discord |
+| 6:00 PM Mon–Fri | Daily digest to Discord |
 | Every 15 min (all day) | Warning monitor — scans holdings, fires only during US market hours (9:30–16:00 ET) |
-| 3:05 AM Tue–Sat | After-close summary to WhatsApp (≈ 4:05 PM ET) |
+| 3:05 AM Tue–Sat | After-close summary to Discord (≈ 4:05 PM ET) |
 
 ---
 
-## WhatsApp Alert Conditions
+## Alert Conditions
 
 | Condition | Alert |
 |---|---|

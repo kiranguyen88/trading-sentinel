@@ -23,7 +23,5 @@
     {"ticker": "USAR",  "entry": null, "stop": null, "notes": ""},
     {"ticker": "SBSW",  "entry": null, "stop": null, "notes": ""},
     {"ticker": "SMCI",  "entry": null, "stop": null, "notes": ""}
-  ],
-  "whatsapp_number": "whatsapp:+84949308344",
-  "whatsapp_numbers": ["whatsapp:+84949308344"]
+  ]
 }

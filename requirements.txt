@@ -6,4 +6,3 @@ numpy
 ta
 python-dotenv
 requests
-twilio

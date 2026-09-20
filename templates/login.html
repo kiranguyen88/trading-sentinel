@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% if mode == 'register' %}Create account{% else %}Sign in{% endif %} · Trading Sentinel</title>
+  <link rel="icon" type="image/png" href="/static/logo.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080b10;
+      --surface:   #0f161d;
+      --glass:     rgba(255,255,255,.035);
+      --border:    rgba(255,255,255,.08);
+      --accent:    #2ee6c5;
+      --accent-2:  #5eead4;
+      --green:     #34d399;
+      --red:       #f87171;
+      --text:      #dbe4ee;
+      --muted:     #7d8b9c;
+      --radius:    14px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      position: relative; overflow: hidden;
+    }
+
+    /* Soft teal light bleeding in from the corners, as on the dashboard. */
+    body::before {
+      content: ''; position: fixed; inset: -20%;
+      background:
+        radial-gradient(520px 320px at 15% 10%, rgba(46,230,197,.11), transparent 70%),
+        radial-gradient(620px 380px at 85% 85%, rgba(46,230,197,.08), transparent 70%);
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      width: 100%; max-width: 380px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), var(--glass));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 28px 28px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(46,230,197,.10),
+                  0 0 44px rgba(46,230,197,.10);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 22px;
+    }
+    .brand img { height: 34px; width: 34px; object-fit: contain; }
+    .brand-name {
+      font-size: 1.15rem; font-weight: 700; letter-spacing: .3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+
+    h1 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+    .sub { font-size: .78rem; color: var(--muted); margin-bottom: 22px; }
+
+    label {
+      display: block; font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px;
+    }
+    input {
+      width: 100%; padding: 11px 13px; margin-bottom: 16px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: .9rem; font-family: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus {
+      outline: none; border-color: rgba(46,230,197,.55);
+      box-shadow: 0 0 0 3px rgba(46,230,197,.10);
+    }
+    input::placeholder { color: #4e5b6b; }
+
+    button {
+      width: 100%; padding: 12px; border: none; border-radius: 10px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: #04211c; font-size: .9rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; letter-spacing: .2px;
+      box-shadow: 0 6px 20px rgba(46,230,197,.22);
+      transition: filter .15s, transform .1s;
+    }
+    button:hover  { filter: brightness(1.08); }
+    button:active { transform: translateY(1px); }
+
+    .error {
+      background: rgba(248,113,113,.10);
+      border: 1px solid rgba(248,113,113,.35);
+      color: #fca5a5;
+      border-radius: 10px; padding: 9px 12px;
+      font-size: .78rem; line-height: 1.45; margin-bottom: 18px;
+    }
+
+    .alt {
+      margin-top: 18px; text-align: center;
+      font-size: .76rem; color: var(--muted);
+    }
+    .alt a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .alt a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <img src="/static/logo.png" alt="" />
+      <span class="brand-name">Trading Sentinel</span>
+    </div>
+
+    {% if mode == 'register' %}
+      <h1>Create your account</h1>
+      <p class="sub">Your portfolio, watchlist and journal stay private to it.</p>
+    {% else %}
+      <h1>Welcome back</h1>
+      <p class="sub">Sign in to reach your portfolio.</p>
+    {% endif %}
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" autocomplete="on">
+      {% if request.args.get('next') %}
+        <input type="hidden" name="next" value="{{ request.args.get('next') }}" />
+      {% endif %}
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autofocus
+             autocomplete="username" placeholder="you@example.com"
+             value="{{ email or '' }}" />
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required
+             autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}"
+             placeholder="{{ 'At least 8 characters' if mode == 'register' else '••••••••' }}" />
+
+      <button type="submit">
+        {% if mode == 'register' %}Create account{% else %}Sign in{% endif %}
+      </button>
+    </form>
+
+    {% if allow_registration %}
+      <div class="alt">
+        {% if mode == 'register' %}
+          Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+        {% else %}
+          No account yet? <a href="{{ url_for('register') }}">Create one</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>

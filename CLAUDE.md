@@ -13,6 +13,9 @@ python app.py          # starts Flask on http://localhost:5000
 # Install dependencies
 pip install -r requirements.txt
 
+# Create an account (needed once — sign-up is closed by default)
+python create_user.py you@example.com your-password --owner
+
 # Deploy — Railway auto-deploys on every push to main
 git push origin main
 ```
@@ -30,9 +33,13 @@ This is a single-process Python Flask server with a pure-JS single-page frontend
 | File | Role |
 |---|---|
 | `app.py` | Flask routes, SSE price stream, APScheduler jobs, TTL cache |
-| `trading_bot.py` | Market data (yfinance), technical indicators, Gemini AI chat, WhatsApp alerts, portfolio/journal persistence |
+| `auth.py` | Accounts (hash/verify, `login_required`, `change_password`), chat logging, owner bootstrap |
+| `create_user.py` | One-off CLI to create an account (the first one has to come from somewhere) |
+| `check_supabase.py` | Diagnostic: is the service key valid and do the tables exist? |
+| `trading_bot.py` | Market data (yfinance), technical indicators, Gemini AI chat, Discord alerts, portfolio/journal persistence |
 | `screener.py` | 400+ stock universe, batch technical scan, Gemini ranking of best setups |
 | `templates/index.html` | Entire frontend — CSS, HTML, vanilla JS (no build toolchain) |
+| `templates/login.html` | Login / register page |
 
 ### Data flow
 
@@ -45,14 +52,59 @@ Browser ──POST─► /chat               (streaming SSE, Gemini 2.5 Flash)
 
 The SSE price stream (`_price_worker` thread in `app.py`) runs every 15 s, batches all portfolio + watchlist tickers via `yfinance.download()`, and broadcasts to every connected client via a per-client `queue.Queue`. New clients immediately receive the cached `_fast_prices` snapshot so they don't wait.
 
-### Portfolio persistence — 3-tier priority
+### Accounts and auth
 
-`load_portfolio()` in `trading_bot.py` checks in order:
-1. Local file at `DATA_DIR/portfolio.json` (Railway persistent volume if `DATA_DIR` is set)
-2. `PORTFOLIO_JSON` environment variable (set in Railway → Variables to survive redeploys)
-3. Committed `portfolio.json` fallback
+Email + password in our own `users` table — not Supabase Auth, so the browser never
+needs an anon key and the server has no JWTs to verify. Passwords are hashed with
+`werkzeug.security`; the session is a signed Flask cookie (`SECRET_KEY`, 30 days).
 
-**Important:** `portfolio.json` in git is a default/seed only. Live data is stored in `PORTFOLIO_JSON` env var on Railway. When the user edits holdings or watchlist via the UI, the change is saved to the local path; the UI also offers "Copy JSON" to paste into the Railway Variable.
+- `auth.login_required` guards every app route. Browsers get a redirect to `/login`;
+  JSON/SSE endpoints get `401 {"error":"auth"}`, and a `fetch` wrapper in the frontend
+  bounces the page to `/login` on any 401.
+- `/cron/*` keeps its own `CRON_SECRET` guard instead, and binds the **owner** account
+  via `_bind_owner()`. Scheduled alerts go to one Discord webhook from a global env var,
+  so they run for the owner only — other accounts get the web app but no alerts.
+- `POST /admin/bootstrap` (CRON_SECRET-guarded, idempotent) creates the owner from
+  `OWNER_EMAIL`/`OWNER_PASSWORD` and copies the pre-accounts `app_state` row into their
+  `user_state`. It never modifies or deletes `app_state`, which stays as a rollback path.
+- Registration is closed unless `ALLOW_REGISTRATION` is truthy. With it closed, create
+  accounts with `python create_user.py <email> <password> [--owner]`.
+- `POST /account/password` changes the signed-in user's password. It requires the current
+  password even though the caller already holds a session — otherwise anyone at an
+  unlocked browser could lock the real owner out.
+
+### Supabase tables
+
+| Table | Holds |
+|---|---|
+| `users` | id, email, password_hash, display_name, is_owner, last_login_at |
+| `user_state` | one jsonb row per user: `{holdings, watchlist}` |
+| `chat_messages` | write-only log of every chat turn (user_id, role, content) |
+| `journal_entries` | trade journal, jsonb body, scoped by user_id |
+| `app_state` | **legacy** single global portfolio row — superseded, kept for rollback |
+
+RLS is on with no policies on all of them, so only the service key reaches them.
+
+### Portfolio persistence — per user
+
+`load_portfolio()` reads `user_state` for the **current user**, which comes from a
+`ContextVar` in `trading_bot.py` (`set_current_user` / `current_user_id`). It is set by
+`@app.before_request` from the session, and by `_bind_owner()` on cron routes. This is
+why `load_portfolio()` takes no `user_id` argument — its nine call sites across
+`app.py`, `trading_bot.py` and `screener.py` stay unchanged. **A streamed response is
+consumed after the request context ends, so `/chat`'s generator re-binds the user
+itself.**
+
+`load_portfolio()` never writes. Supabase being *unreachable* is not the same as the row
+being *empty* — only one of those is safe to overwrite, and conflating them is what once
+replaced the live portfolio with the bundled seed. Seeding happens only in
+`seed_portfolio_if_empty()`.
+
+With no user and no database (offline dev), it falls back to the old chain: local
+`DATA_DIR/portfolio.json` → `PORTFOLIO_JSON` env var → committed `portfolio.json` seed.
+
+**Anything cached per process must be keyed by user id** — `_cached_fetch`, `_fast_prices`
+and `_alert_key` all are. A missed key leaks one account's positions to another.
 
 ### Technical indicators
 
@@ -67,12 +119,12 @@ All indicators are computed in `get_stock_data()` (`trading_bot.py`):
 
 | Schedule | Job |
 |---|---|
-| 6:00 PM VN Mon–Fri | `run_daily_digest()` → WhatsApp |
-| 3:05 AM VN Tue–Sat | `run_daily_digest()` → WhatsApp (≈ after US close) |
+| 6:00 PM VN Mon–Fri | `run_daily_digest()` → Discord |
+| 3:05 AM VN Tue–Sat | `run_daily_digest()` → Discord (≈ after US close) |
 | Every 1 hour | `check_warnings()` — self-gates on ET market hours 9:30–16:00 |
-| 5:55 PM VN Mon–Fri | `auto_scan_watchlist()` → WhatsApp |
+| 5:55 PM VN Mon–Fri | `auto_scan_watchlist()` → Discord |
 
-Alert deduplication: `_sent_alerts` set uses `{date}:{ticker}:{alert_type}` keys; one alert per ticker per type per calendar day. `/check-now` clears this set before running.
+Alert deduplication: `_sent_alerts` set uses `{date}:{user_id}:{ticker}:{alert_type}` keys; one alert per user per ticker per type per calendar day. `/check-now` clears only the calling user's keys before running.
 
 ### Frontend JS architecture (`templates/index.html`)
 
@@ -89,7 +141,7 @@ Mobile layout uses a bottom tab nav (Portfolio / Chat / Watchlist / Actions) wit
 
 ### TTL cache in `app.py`
 
-`_cached_fetch(key, fetch_fn)` wraps expensive calls to `get_portfolio_snapshot` and `get_watchlist_snapshot`:
+`_cached_fetch(key, fetch_fn)` wraps expensive calls to `get_portfolio_snapshot` and `get_watchlist_snapshot`, under keys of the form `portfolio:{user_id}` / `watchlist:{user_id}`:
 - Fresh if age < 120 s
 - Stale (serves old data + sets `X-Stale` response header) if age 120–600 s
 - Re-raises if nothing cached yet
@@ -97,6 +149,8 @@ Mobile layout uses a bottom tab nav (Portfolio / Chat / Watchlist / Actions) wit
 ### AI chat
 
 `chat_stream()` in `trading_bot.py` uses the Gemini REST API directly (not the SDK's streaming interface) to yield SSE chunks. The system prompt is trading-focused: short-term momentum, breakouts, catalyst plays. Chat history is passed from the browser on every request (stateless backend).
+
+The `/chat` route logs both turns to `chat_messages` by parsing the SSE frames it forwards. The log is **write-only** — nothing reads it back into the prompt, so it never affects a response, and a logging failure is swallowed rather than breaking the stream.
 
 ### Screener
 
@@ -108,9 +162,13 @@ Mobile layout uses a bottom tab nav (Portfolio / Chat / Watchlist / Actions) wit
 
 | Variable | Purpose |
 |---|---|
+| `SECRET_KEY` | **Required.** Signs the session cookie. Unset = random key, so every restart logs everyone out |
+| `SUPABASE_SERVICE_KEY` | **Required.** Service-role key; the only way to reach any table |
+| `OWNER_EMAIL` / `OWNER_PASSWORD` | Used once by `POST /admin/bootstrap` to create the owner account |
+| `ALLOW_REGISTRATION` | Truthy opens `/register`; default is closed |
+| `CRON_SECRET` | Guards `/cron/*` and `/admin/bootstrap` |
 | `GEMINI_API_KEY` | Google AI Studio key for Gemini 2.5 Flash |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | WhatsApp alerts via Twilio sandbox |
-| `TWILIO_WHATSAPP_FROM` | Sender number, default `whatsapp:+14155238886` |
-| `PORTFOLIO_JSON` | JSON blob of portfolio; set in Railway to persist across redeploys |
+| `DISCORD_WEBHOOK_URL` | Webhook that every alert and digest is posted to |
+| `PORTFOLIO_JSON` | Legacy single-tenant fallback; only read when there is no user |
 | `DATA_DIR` | Optional path for persistent volume (Railway) |
 | `PORT` | Flask port, default `5000` |
