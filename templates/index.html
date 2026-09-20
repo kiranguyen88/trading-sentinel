@@ -723,12 +723,8 @@
         <span class="mob-sum-value" id="mob-day-pnl">—</span>
       </div>
       <div class="mob-sum-cell">
-        <span class="mob-sum-label">Unreal.</span>
+        <span class="mob-sum-label">Total P&L</span>
         <span class="mob-sum-value" id="mob-total-pnl">—</span>
-      </div>
-      <div class="mob-sum-cell" style="background:rgba(46,230,197,.06)">
-        <span class="mob-sum-label">Realized</span>
-        <span class="mob-sum-value" id="mob-realized">—</span>
       </div>
     </div>
 
@@ -1573,7 +1569,7 @@ Quick starts:
         return;
       }
       renderJournal(data);
-      applyRealized(data);
+      applyLedgerSummary(data);
     } catch (e) {
       document.getElementById('jr-banner').innerHTML =
         '<div class="jr-warn">Could not load the journal.</div>';
@@ -1790,10 +1786,11 @@ Quick starts:
     } catch (e) { setJrStatus('Could not resync.', true); }
   }
 
-  // Mobile summary strip — realized P&L, fetched without opening the modal.
-  function applyRealized(d) {
-    // Holdings show one card per ticker, so remember how many FIFO lots sit
-    // behind each one — the card says "2 lots" rather than losing the detail.
+  // Holdings show one card per ticker, so remember how many FIFO lots sit behind
+  // each one — the card says "2 lots" rather than losing the detail. Realized
+  // P&L deliberately stays inside the journal: the summary strip is for the
+  // position you're holding right now.
+  function applyLedgerSummary(d) {
     _lotCounts = {};
     (d.open_lots || []).forEach(l => { _lotCounts[l.ticker] = (_lotCounts[l.ticker] || 0) + 1; });
 
@@ -1801,21 +1798,14 @@ Quick starts:
     // the cards once they're known — otherwise "2 lots" only appears on the next
     // refresh.
     if (_lastPortfolio) renderPortfolio(_lastPortfolio);
-
-    const el = document.getElementById('mob-realized');
-    if (!el) return;
-    if (d.ledger_empty) { el.textContent = '—'; el.className = 'mob-sum-value neutral'; return; }
-    const v = (d.totals || {}).realized_pnl;
-    el.textContent = _signed(v, 0);
-    el.className = 'mob-sum-value ' + _cls(v);
   }
 
-  async function loadRealized() {
+  async function loadLedgerSummary() {
     try {
       const res  = await fetch('/journal/summary?limit=0', {cache: 'no-store'});
       const data = await res.json();
-      if (res.ok && data.ok) applyRealized(data);
-    } catch (_) { /* the strip just keeps its placeholder */ }
+      if (res.ok && data.ok) applyLedgerSummary(data);
+    } catch (_) { /* cards just render without the lot note */ }
   }
 
   // Close modals on overlay click
@@ -1965,7 +1955,7 @@ Quick starts:
   // Init
   loadPortfolio();
   loadWatchlist();
-  loadRealized();                                    // realized P&L + lot counts
+  loadLedgerSummary();                               // FIFO lot counts for the cards
   fetchPrices();                                     // immediate first fetch
   setInterval(fetchPrices,         30000);           // price poll: 30 s
   setInterval(() => { loadWatchlist(); },  60000);   // watchlist: 60 s poll
