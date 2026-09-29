@@ -11,8 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger check-warnings
+        # --fail-with-body: a non-2xx fails the run and still prints the error JSON
         run: |
-          curl -sf "${{ secrets.APP_URL }}/cron/check-warnings" \
+          curl -sS --fail-with-body "${{ secrets.APP_URL }}/cron/check-warnings" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
-            --max-time 60 \
-            || echo "Request failed (non-fatal)"
+            --max-time 60
+
+  # GitHub disables scheduled workflows after 60 days without repo activity —
+  # that silently stopped alerts once already. Re-enabling via the API resets
+  # the timer without a commit (a commit to main would trigger a Vercel deploy).
+  # Separate job so it still runs when the check above fails.
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Keep workflow enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/hourly-warnings.yml/enable"
